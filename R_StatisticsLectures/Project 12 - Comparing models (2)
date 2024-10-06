@@ -1,0 +1,266 @@
+---
+title: "isar Exercise sheet 12"
+author: "Luca Witte"
+date: "2022-12-18"
+output: pdf_document
+
+header-includes:
+  \usepackage[labelfont = bf, font =  {small, sf},
+  singlelinecheck=true, margin=22pt]{caption}
+  \usepackage{float}
+  \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(gridExtra)
+library(kableExtra)
+dat1 <- load("./data/CRC_Indidence_Data.RData")
+
+```
+
+
+# Task 12.1 - Logistic regression of cancer incidence
+
+We look at a data set in which the number cancer cases in a population of at-risk individuals is recorded. We focus on a subset containing recordings only about 50-55 year-old females with "registry = 20" from 1975 to 1980. The "CRC_subset" is stratified by age, so that a recording of sex, race, registry and cancer cases in a specific age group can be observed. 
+
+```{r, results = "asis", echo=FALSE}
+knitr::kable(CRC_subset, format = "latex", align = "llc", 
+             booktabs = TRUE, linesep = c('', '', '', '\\addlinespace'),
+             caption = "Data in the CRCsubset used for subtask 1.") %>% 
+  kable_styling(position="center", font_size = 9, latex_options = "hold_position")
+```
+
+## Subtask 12.1.1: Probability of having cancer
+
+First we observe the probability of having cancer over all individuals in the CRC_subset:
+
+```{r}
+cancer <- sum(CRC_subset$cancers)
+non_cancer <- sum(CRC_subset$noncancers)
+(cancer/(cancer+non_cancer))
+
+```
+It appears that the average probability of having (detectable) cancer in the given population and at the respective time is approximately $\rho = 0.05%$. 
+
+## Subtask 12.1.2: Fitting a logistic regression model
+
+As mutations accumulate and biochemical functions deteriorate with age, it is reasonable to assume that the probability of cancer depends on age. Here we fit a logistic regression model to the data:
+$$
+log\Big(\frac{\rho}{1-\rho}\Big) = \beta_0 + \beta_1 age
+$$
+
+```{r}
+glm_cancerAge <- glm(cancerstatus ~ age, 
+                     CRC_subset_expanded,
+                     family="binomial")
+summary(glm_cancerAge)
+```
+From the results of fitting the model, we observe p-values below the significance level $\alpha = 0.05$ for both the intercept and the slope of the model. With a slope of 0.089, this implied that there might indeed be an effect of age on the the occurrence of cancer in the studied population. The full model is:
+$$-12.254 + 0.089 * age = cancerstatus\\
+with:\ p=0.0096$$
+This approach does only return a change in the log-odds, but not an absolute change in probabilities. Subsequently, the increase in risk of being diagnosed with cancer is relative to the starting probability. We can derive that $exp(0.089) = 1.093$, therefor with each additional year, the odds $\frac{\rho}{1-\rho}$ increase on average around 9 %. 
+
+The Akaike information criterion is used later to compare different models. It quantifies prediction error with respect to the degrees of freedom. This can be helpful to pick the simplest model for which we can assume a good explanation of the data to prevent overfitting.  
+
+Further interpretation of generalized linear models (GLM) is more challenging than for the conventional case. Especially the residuals, which depend on the characteristics of the used distribution, can be hard to understand intuitively. Different metrics are used and can be accessed in R, as the "raw" residuals do not necessary make sense for every distribution. To interpret the different kinds of residuals, the author of this report used Chapter 3 of the book *Contingency Table Analysis* (Maria Kateri) and the following website: https://www.datascienceblog.net/post/machine-learning/interpreting_generalized_linear_models/ (20.12.22)
+In short, the "null-deviance" refers to GLM only implementing the intercept, whereas the "Residual deviance" refers to the trained GLM with the slope in the output. 
+
+## Subtask 12.1.3: Comparing data structures
+
+Data can be inputted in the "glm" function when using the "binomial" family three ways: as factor, as numerical vector and as two-column integer matrix. Before, we used approach 2, here we now change the data structure and use a two-column matrix (successes vs. failures) as input. The data set used hereafter is now summarized by age.
+
+```{r}
+glm_cancerAge_2 <- glm(cbind(cancers, noncancers) ~ age, 
+                     CRC_subset,
+                     family="binomial")
+summary(glm_cancerAge)
+summary(glm_cancerAge_2)
+```
+We observe that slope and intercept are the same. Further, the same p-values are returned. At the same time the degrees of freedom in the data (and therefore also the AIC) change. Effectively we are summarizing the data and thereby restricting the freedom in modelling. This affects the deviances (described above). Also the number of Fisher scoring iterations (repeats for finding the maximum likelihood estimates of the coefficients) is decreased. Therefore it appears that we were able to decrease the complexity of the model without substantial loss of information.
+
+```{r}  
+par(mfrow = c(1,2),
+    mar = c(5,5,5,5))
+
+plot(density(resid(glm_cancerAge, type='response')),
+     main = "Response-residuals")
+lines(density(resid(glm_cancerAge_2, type='response')), col='red')
+legend("topright", col = c("black", "red"), lty = 1, legend = c("glm 1", "glm 2"))
+
+plot(density(resid(glm_cancerAge, type='response')), xlim = c(-0.05,0.15),
+     main = "Response-residuals (zoomed)")
+lines(density(resid(glm_cancerAge_2, type='response')), col='red')
+legend("topright", col = c("black", "red"), lty = 1, legend = c("glm 1", "glm 2"))
+
+```
+
+```{r}  
+par(mfrow = c(1,2),
+    mar = c(5,5,5,5))
+
+plot(density(resid(glm_cancerAge, type='pearson')),
+     main = "Pearson-residuals")
+lines(density(resid(glm_cancerAge_2, type='pearson')), col='red')
+legend("topright", col = c("black", "red"), lty = 1, legend = c("glm 1", "glm 2"))
+
+plot(density(resid(glm_cancerAge, type='pearson')), xlim = c(-0.5,5),
+     main = "Pearson-residuals (zoomed)")
+lines(density(resid(glm_cancerAge_2, type='pearson')), col='red')
+legend("topright", col = c("black", "red"), lty = 1, legend = c("glm 1", "glm 2"))
+```
+
+```{r}  
+par(mfrow = c(1,2),
+    mar = c(5,5,5,5))
+
+plot(density(resid(glm_cancerAge, type='deviance')),
+     main = "Deviance-residuals")
+lines(density(resid(glm_cancerAge_2, type='deviance')), col='red')
+legend("topright", col = c("black", "red"), lty = 1, legend = c("glm 1", "glm 2"))
+
+plot(density(resid(glm_cancerAge, type='deviance')), xlim = c(-0.5,5),
+     main = "Deviance-residuals (zoomed)")
+lines(density(resid(glm_cancerAge_2, type='deviance')), col='red')
+legend("topright", col = c("black", "red"), lty = 1, legend = c("glm 1", "glm 2"))
+
+```
+
+From the different types of residual-plots, we can observe that the residuals for both models are rather small. Further we can derive that the second model based on the summarized data tends to have lower observed densities (as we have a much smaller number of points), but a stronger tail to the right. This indicates that this model has a higher uncertainty. 
+
+We can further look at quantile residuals generated by the "qresid" function, which transforms the estimated distribution to produce continous normal residuals. To improve runtime in plotting, a (random) subset of the expanded data set is taken. Here we use 100000 individuals as subset-size. We plot the transformed residuals against the fitted values $\hat{y}$.
+
+```{r}
+library(statmod)
+subset <- sample(1:nrow(CRC_subset_expanded), 100000, replace=F)
+glm_cancerAge_sub <- glm(cancerstatus ~ age, 
+                     CRC_subset_expanded[subset,],
+                     family="binomial")
+par(mfrow=c(1,2))
+
+glm_cancerAge
+scatter.smooth(predict(glm_cancerAge, type='response'), qresid(glm_cancerAge_sub), col='gray')
+scatter.smooth(predict(glm_cancerAge_2, type='response'), qresid(glm_cancerAge_2), col='gray')
+```
+
+It is clear to see that the lower number of data points in the summarized data set increases the apparent residuals. This is in accordance with what has been observed earlier. Therefore we conclude that while the model still delivers the same prediction, we loose information content by summarizing the data.
+
+## Subtask 12.1.4: Model comparison
+
+Here we remove the intercept term $\beta_0$ from the formula. Intuitively, this makes sense assuming that there is a zero risk of cancer at birth.
+
+```{r}
+glm_cancerAge_noInter_1 <- glm(cancerstatus ~ -1 + age, 
+                     CRC_subset_expanded,
+                     family="binomial")
+
+glm_cancerAge_noInter_2 <- glm(cbind(cancers, noncancers) ~ -1 + age, 
+                      CRC_subset, family="binomial")
+
+glm_cancerAge_noInter_1
+glm_cancerAge_noInter_2
+```
+Again it is clear to see that the degrees of freedom are reduced when the data is summarized. Therefore, the model fitted to the expanded data set (600,000 entries) has a much higher AIC than the summarized data set (6 entries). This still does not affect the slope in our models. Interestingly, the fit now returns a negative slope, which implies an opposite effect (less cancer odds with higher age).
+
+The log-likelihood is used to measure goodness of fit for models fitted by maximum likelihood. In general, higher log-likelihood values indicate a better fit, making it a useful tool in comparing different models. Here we combine it with the AIC, for which lower values indicate a better fit.
+
+```{r}
+logLik(glm_cancerAge)
+logLik(glm_cancerAge_noInter_1)
+AIC(glm_cancerAge)
+AIC(glm_cancerAge_noInter_1)
+
+```
+
+For the expanded data set, we can observe a slight decrease in log-likelihood when the intercept is removed (from -2600 to -2624). At the same time, there is a slight increase in the AIC (5205 to 5250). Both changes indicate a better fit for the model including the intercept, though the relative change is rather small.
+
+```{r}
+logLik(glm_cancerAge_2)
+logLik(glm_cancerAge_noInter_2)
+AIC(glm_cancerAge_2)
+AIC(glm_cancerAge_noInter_2)
+```
+For the data set of individuals summarized by age, we also observe a decrease in log-likelihood when omitting the intercept (-19 to -43) and an increase in AIC (42 to 88). Again both values indicate that the model with removed intercept is a worse fit to the data. Here, the relative change is more pronounced. We can conclude that omitting the intercept appears to decrease model-performance and therefore in subsequent steps the $\beta_0$-term should be kept.
+
+## Subtask 12.1.5: Logistic regression on full data set
+
+Now we work with the full dataset:
+
+```{r}
+head(CRC_Incidence_Data)
+summary(CRC_Incidence_Data)
+```
+The data contains information about sex, age, race, registry and diagnosis-years. It is not restricted to only a specific group anymore (as in the subset). We want to investigate the influence of these possible covariates on the cancer incidence. 
+
+We start by fitting a logistic regression model with all those factors:
+
+```{r}
+glm_task5 <- glm(cbind(cancers, noncancers) ~ age + sex + race + as.numeric(registry) + year_bin, data =  CRC_Incidence_Data, family="binomial")
+summary(glm_task5)
+```
+The summary of the model indicates p-values far below the significance level $\alpha = 0.05$ for almost all included factors. The only non-significant factors are year_bin's for (1975,1980] and (1985,1990]. A quick look at the data in those groups did not reveal an obvious difference to the other years.
+
+We can now look at the exponential of the coefficients (and thereby the implied influence of different factors on cancer-odds):
+
+```{r}
+exp(summary(glm_task5)$coefficients)
+```
+As before, we observe an approximately 9% increase in odds of being diagnosed with cancer with an increase in age. Further we observe slightly decreased odds for developing cancer if the individual is female (around 0.7%). Additionally, black individuals appear to have a higher risk of cancer with odds being increased by 27%. 
+
+Further it appears that there is a systematic decrease of slope with the years of diagnosis. The following barplot shows this decrease (non-significant data is indicated in light-gray):
+
+```{r}
+names <- substring(rownames(exp(summary(glm_task5)$coefficients)[7:14,]), 
+                   9, 19)
+estimates <- exp(summary(glm_task5)$coefficients)[7:14,1]
+
+par(mar=c(7.2,5,1,1))
+barplot(estimates, las = 2, names.arg = names,
+        ylab = "relative change in odds",
+        col = c("gray85", "gray34", "gray85", rep("gray34", 5)))
+mtext("year_bin", 1, 6)
+
+```
+This might be due to lower prevalence of cancer due to better availability of information. Stricter regulations and individual caution might decrease exposure to sources of cancer-risk (eg. mutagenic substances, smoking etc.). Alternatively, this trend could be caused by better tools for diagnostics, decreasing the rate of false positives and the odds of being diagnosed with cancer. 
+
+A further interesting fact is the apparent correlation with the "registry"-factor. Without background information, this is hard to interpret, but it might indicate a difference in data recording between different hospitals or research organizations. The registry does not seem to be related to years (which could indicate that some registering places closed sequentially and thereby confound with the year_bin):
+
+```{r}
+plot(y = CRC_Incidence_Data$registry, x = CRC_Incidence_Data$year_bin,
+     ylab = "registry", xlab = "year_bin")
+table(CRC_Incidence_Data$registry)
+```
+Therefore, we can assume systematic differences in diagnistics or data recording between the different registries. It might be worth to search for the missing registries to obtain a more complete data set.
+
+## Subtask 12.1.6: Quadratic term for age
+
+We now add an additional term for $age^2$ to the model:
+
+```{r}
+glm_task6 <- glm(cbind(cancers, noncancers) ~ age + sex + race + as.numeric(registry) + year_bin + I(age^2), data  = CRC_Incidence_Data, family="binomial")
+```
+
+The "I(age^2)" indicates to only include the exact formulation, whereas "age^2" would include all interactions up to the square (age + age^2). 
+
+Now we can have a look at the model:
+
+```{r}
+summary(glm_task6)
+```
+It appears that the new term ($age^2$) is also statistically significant with a p-value of "$< 2e-16$". The other coefficients tend to change when the new term is included. These observations are not surprising, as the $age^2$- and the $age$-term are closely related. We basically include an additional term that assigns more weight to the age-variable. This might be reasonable if we assume that cancer-risk does not increase linearly, but the higher the age, the higher the increase in odds for being diagnosed with cancer per additional year. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
