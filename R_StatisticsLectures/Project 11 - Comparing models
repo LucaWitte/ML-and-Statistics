@@ -1,0 +1,420 @@
+---
+title: "isar Exercise sheet 11"
+author: "Luca Witte"
+date: "2022-12-11"
+output: pdf_document
+
+header-includes:
+  \usepackage[labelfont = bf, font =  {small, sf},
+  singlelinecheck=true, margin=22pt]{caption}
+  \usepackage{float}
+  \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(gridExtra)
+library(kableExtra)
+dat1 <- read.csv("./data/genetic_circuit.csv")
+
+```
+
+# Task 11.1 - Whether to log transform the genetic_circuit data
+
+In exercise 9.1, we investigated data from a paper that dealt with a genetic circuit for sensing cytokines. Here the data is further explored by fitting models to different combinations of log-transformed or non-transformed data. This exercise aims at comparing the fits of those models. 
+
+First we log-transform the data for concentration and SEAP: 
+
+```{r}
+dat1$seap <- dat1$seap + 0.1 # add a small epsilon to prevent log(0)
+
+dat1 %>% mutate(seap_log = log(seap), 
+                concentration_log = log(concentration)) -> dat1_withlog
+```
+
+We can investigate the data by plotting the different combinations:
+
+```{r}
+gg1 <- ggplot(dat1_withlog, aes(y = seap, x = concentration)) +
+  geom_point() +
+  geom_smooth(method = lm, formula = y ~ x) +
+  ylab("SEAP") +
+  xlab("Concentration") +
+  ggtitle("SEAP / Concentration")
+
+gg2 <- ggplot(dat1_withlog, aes(y = seap_log, x = concentration)) +
+  geom_point() +
+  geom_smooth(method = lm, formula = y ~ x) +
+  ylab("log(SEAP)") +
+  xlab("Concentration") +
+  ggtitle("log(SEAP) / Concentration")
+
+gg3 <- ggplot(dat1_withlog, aes(y = seap, x = concentration_log)) +
+  geom_point() +
+  geom_smooth(method = lm, formula = y ~ x) +
+  ylab("SEAP") +
+  xlab("log(Concentration)") +
+  ggtitle("SEAP / log(Concentration)")
+
+gg4 <- ggplot(dat1_withlog, aes(y = seap_log, x = concentration_log)) +
+  geom_point() +
+  geom_smooth(method = lm, formula = y ~ x) +
+  ylab("log(SEAP)") +
+  xlab("log(Concentration)") +
+  ggtitle("log(SEAP) / log(Concentration)")
+
+grid.arrange(gg1, gg2, gg3, gg4, nrow = 2)
+
+```
+From these exploratory plots we can observe that the concentration has a large gap (between 100 and 1000) if not log-transformed. Futher it seems like the SEAP level clusters in two groups when the SEAP-variable is log-transformed. 
+
+This can also be visualized by plotting the histograms of the values:
+
+```{r}
+par(mfrow = c(2,2))
+hist(dat1_withlog$concentration, 
+     main = "Concentration", breaks = 60)
+hist(dat1_withlog$concentration_log, 
+     main = "log(Concentration)", breaks = 60)
+hist(dat1_withlog$seap, 
+     main = "SEAP", breaks = 100)
+hist(dat1_withlog$seap_log, 
+     main = "log(SEAP)", breaks = 100)
+```
+Again we can observe that the concentration is more evenly distributed after log-transformation. The SEAP-value appears bimodal after log-transformation, but also more evenly distributed.
+
+We can now fit the model:
+lm(seap ~ (concentration + experiment + cytokine)*figure)
+to the data prior to and after log-transformation:
+
+```{r}
+
+lm_seap_conc <- lm(seap ~ (concentration + experiment + cytokine)*figure, 
+                   data = dat1_withlog)
+lm_seapLog_conc <- lm(seap_log ~ (concentration + experiment + cytokine)*figure, 
+                   data = dat1_withlog)
+lm_seap_concLog <- lm(seap ~ (concentration_log + experiment + cytokine)*figure, 
+                   data = dat1_withlog)
+lm_seapLog_concLog <- lm(seap_log ~ (concentration_log + experiment + cytokine)*figure, 
+                   data = dat1_withlog)
+```
+
+The r-squared values of the fits are as follows:
+
+```{r}
+lm_rsq <- c(summary(lm_seap_conc)$r.squared, summary(lm_seapLog_conc)$r.squared,
+  summary(lm_seap_concLog)$r.squared, summary(lm_seapLog_concLog)$r.squared)
+rsq_df <- data.frame("SEAP values" = c("as is", "log-transformed", 
+                             "as is", "log-transformed"),
+           "Concentration values" = c("as is", "as is",
+                            "log-transformed", "log-transformed"),
+           "R squared" = round(lm_rsq,3)
+           )
+```
+```{r, results = "asis", echo=FALSE}
+knitr::kable(rsq_df, format = "latex", align = "llc", 
+             booktabs = TRUE, linesep = c('', '', '', '\\addlinespace'),
+             caption = "R-squared values for the models fitted to the data prior and after log-transformation.") %>% 
+  kable_styling(position="center", font_size = 9, latex_options = "hold_position")
+```
+
+The table above shows that a log-transformation of either SEAP or concentration increases the $R^2$ value and a further slight increase is observed when both variable are log-transformed. This indicates that the model fits the log/log-data best. Though the differences are small and even without further processing of the data, the $R^2$ value indicates that the model explains the observed effect well. 
+
+To further evaluate the models, we can investigate the residuals:
+
+```{r}
+gg_res1 <- ggplot(lm_seap_conc, aes(x = .fitted, y = .resid)) +
+ geom_point(size = 1) +
+ xlab(expression(hat(y))) + ylab(expression(epsilon)) +
+  ggtitle("Residuals: SEAP / Concentration")+ 
+  theme(plot.title = element_text(size=9))
+
+gg_res2 <- ggplot(lm_seapLog_conc, aes(x = .fitted, y = .resid)) +
+ geom_point(size = 1) +
+ xlab(expression(hat(y))) + ylab(expression(epsilon)) +
+  ggtitle("Residuals: log(SEAP) / Concentration")+ 
+  theme(plot.title = element_text(size=9))
+
+gg_res3 <- ggplot(lm_seap_concLog, aes(x = .fitted, y = .resid)) +
+ geom_point(size = 1) +
+ xlab(expression(hat(y))) + ylab(expression(epsilon)) +
+  ggtitle("Residuals: SEAP / log(Concentration)")+ 
+  theme(plot.title = element_text(size=9))
+
+gg_res4 <- ggplot(lm_seapLog_concLog, aes(x = .fitted, y = .resid)) +
+ geom_point(size = 1) +
+ xlab(expression(hat(y))) + ylab(expression(epsilon)) +
+  ggtitle("Residuals: log(SEAP) / log(Concentration)")+ 
+  theme(plot.title = element_text(size=9))
+
+grid.arrange(gg_res1, gg_res2, 
+             gg_res3, gg_res4, nrow = 2)
+```
+It appears that the variance is not constant when SEAP is not log-transformed. For log-transformed SEAP, the variance is approximately constant (except for a few outliers). Further, clustering os observed in all cases except for the "SEAP/log(concentration)" plot. This is expected, as the explanatory variable (concentration) only takes few discrete values. We can further check for normal distribution of the residuals:
+
+```{r}
+gg_res_hist1 <- ggplot(lm_seap_conc, 
+                       aes(x = .resid, y = ..density..))+ 
+  xlab(expression(epsilon)) +
+  geom_histogram(binwidth = 3, colour = "darkorange", 
+               fill = "darkorange", alpha = 0.5) +
+  ggtitle("Residuals: SEAP / Concentration") + 
+  theme(plot.title = element_text(size=9))
+
+gg_res_hist2 <- ggplot(lm_seapLog_conc, 
+                aes(x = .resid, y = ..density..))+ 
+  xlab(expression(epsilon)) +
+  geom_histogram(binwidth = 0.1, colour = "darkorange", 
+               fill = "darkorange", alpha = 0.5) +
+  ggtitle("Residuals: log(SEAP) / Concentration") + 
+  theme(plot.title = element_text(size=9))
+
+gg_res_hist3 <- ggplot(lm_seap_concLog, 
+                       aes(x = .resid, y = ..density..)) + 
+  xlab(expression(epsilon)) +
+  geom_histogram(binwidth = 3, colour = "darkorange", 
+               fill = "darkorange", alpha = 0.5) +
+  ggtitle("Residuals: SEAP / log(Concentration)") + 
+  theme(plot.title = element_text(size=9))
+
+gg_res_hist4 <- ggplot(lm_seapLog_concLog, 
+                       aes(x = .resid, y = ..density..)) +
+ xlab(expression(epsilon)) +
+ geom_histogram(binwidth = 0.1, colour = "darkorange", 
+                fill = "darkorange", alpha = 0.5)+
+  ggtitle("Residuals: log(SEAP) / log(Concentration)") + 
+  theme(plot.title = element_text(size=9))
+
+grid.arrange(gg_res_hist1, gg_res_hist2, 
+             gg_res_hist3, gg_res_hist4, nrow = 2)
+
+par(mfrow = c(2,2), mar = c(4,4,1,1))
+qqnorm(lm_seap_conc$residuals, col = "dodgerblue", 
+       pch = 19, cex = 0.5, cex.main=0.8,
+       main = "NormalQQ: SEAP / Concentration")
+qqline(lm_seap_conc$residuals, col = "darkorange", lwd = 2)
+
+
+qqnorm(lm_seapLog_conc$residuals, col = "dodgerblue", 
+       pch = 19, cex = 0.5, cex.main=0.8,
+       main = "NormalQQ: log(SEAP) / Concentration")
+qqline(lm_seapLog_conc$residuals, col = "darkorange", lwd = 2)
+
+qqnorm(lm_seap_concLog$residuals, col = "dodgerblue", 
+       pch = 19, cex = 0.5, cex.main=0.8,
+       main = "NormalQQ: SEAP / log(Concentration)")
+qqline(lm_seap_concLog$residuals, col = "darkorange", lwd = 2)
+
+qqnorm(lm_seapLog_concLog$residuals, col = "dodgerblue", 
+       pch = 19, cex = 0.5, cex.main=0.8,
+       main = "NormalQQ: log(SEAP) / log(Concentration)")
+qqline(lm_seapLog_concLog$residuals, col = "darkorange", lwd = 2)
+```
+
+We can observe that after log-transformation of the SEAP-variable, the residuals appears to be more normally distributed. Though some non-normality on the left can be observed, this affects only relatively few values and therefore we can expect the p-values to be properly callibrated.
+
+Without log-transformation of the SEAP-variable, we observe a stronger tails on both the left and the right, indicating a deviation from normality. 
+
+Interestingly, log-transformation of the concentration-variable appears to have a relatively small effect on the residuals, though is still leading to improvements in $R^2$. 
+
+# Task 11.2 - Extend the model from Exercise 11.1
+
+Here we pick one model from the previous exercise and further explore its implications. As there were no further specifications, we will explore the model fit to the data log-transformed for both variables.
+
+First we can have a look at the model coefficients:
+
+```{r}
+summary(lm_seapLog_concLog)$coefficients
+```
+
+Next, we conduct an analysis of variance (ANOVA):
+
+```{r}
+anova(lm_seapLog_concLog)
+```
+For all covariates in the model, a p-value far below the significance threshold of $\alpha = 0.05$ is returned. This means that we reject the null hypothesis of $H_0: \beta_{i} = 0$ for all continous variables and $H_0: \beta_{i,k} = 0$ for all categorical variables. The ANOVA therefore indicates that further simplifying the model would results in a decrease of accuracy. We can assume that all model components have an influence on log(SEAP). 
+
+We can now explore the effects of varying the interactions of covariates in the model. Four possible additional models are tested:
+
+* seap_log ~ (concentration_log + (experiment\*cytokine))\*figure
+* seap_log ~ ((concentration_log\*experiment) + cytokine)\*figure
+* seap_log ~ ((concentration_log\*cytokine) + experiment)\*figure
+* seap_log ~ concentration_log\*experiment\*cytokine\*figure
+
+We then use ANOVA and the complexity as guidance to compare the different models: 
+
+```{r}
+lm_a <- lm(seap_log ~ (concentration_log + (experiment*cytokine))*figure, 
+            data = dat1_withlog)
+lm_b <- lm(seap_log ~ ((concentration_log*experiment) + cytokine)*figure, 
+            data = dat1_withlog)
+lm_c <- lm(seap_log ~ ((concentration_log*cytokine) + experiment)*figure, 
+            data = dat1_withlog)
+lm_d <- lm(seap_log ~ (concentration_log*experiment*cytokine)*figure, 
+            data = dat1_withlog)
+
+anova(lm_a)
+anova(lm_b)
+anova(lm_c)
+anova(lm_d)
+
+
+```
+It can be seen that all additional interactions have non-significant p-values (at $\alpha = 0.05$). Therefore we assume the additional interactions to complicate the model without a better explanation of the data. 
+
+```{r}
+pval_anova <- c(anova(lm_seapLog_concLog)["concentration_log",5], 
+                    anova(lm_a)["concentration_log",5], 
+                    anova(lm_b)["concentration_log",5], 
+                    anova(lm_c)["concentration_log",5], 
+                    anova(lm_d)["concentration_log",5])
+
+AICs <- round(c(AIC(lm_seapLog_concLog), AIC(lm_a), 
+                AIC(lm_b), AIC(lm_c), AIC(lm_d)),1)
+rsq <- round(c(summary(lm_seapLog_concLog)$r.squared, summary(lm_a)$r.squared,
+        summary(lm_b)$r.squared, summary(lm_c)$r.squared, 
+        summary(lm_d)$r.squared),4)
+names <- c("None", "experiment * cytokine", 
+           "log(concentration) * experiment",
+           "log(concentration) * cytokine",
+           "log(concentration) * experiment * cytokine")
+extended_models <- data.frame(
+  "Interaction" = names,
+  "R squared" = rsq,
+  "p-value" = pval_anova,
+  "AIC" = AICs
+)
+
+print(extended_models)
+
+```
+The Akaike information criterion (AIC) corrects for the additional freedom from the added parameters. Lower AIC values therefore hint at a better suited model. In our case, the model without additional interactions between covariates has the lowest AIC. The p-values for concentration_log are all highly significant. All returned $R^2$ values are very similar. 
+
+Another interesting aspect (discussed further in 11.3) is the correlation of concentration with the figure index:
+
+```{r}
+summary(lm_seapLog_concLog)$coefficients[10:12,]
+summary(lm_a)$coefficients[14:16,]
+summary(lm_b)$coefficients[12:14,]
+summary(lm_c)$coefficients[12:14,]
+summary(lm_d)$coefficients[18:20,]
+
+```
+
+
+## Interpretation
+
+```{r, results = "asis", echo=FALSE}
+knitr::kable(extended_models, format = "latex", align = "lrrr", 
+             booktabs = TRUE,
+             caption = "Analysis of different models including interactions between covariates.") %>% 
+  kable_styling(position="center", font_size = 9, latex_options = "hold_position") %>% 
+  column_spec(column = 1, width = "6.5cm") %>% 
+  column_spec(column = c(2:4), width = "1.5cm")
+```
+
+
+In the table above, p-values for concentration_log from the ANOVAs are recorded together with the AIC and the $R^2$ value for each model. We want to draw conclusions on whether including aditional interactions improves the quality of the model. We can observe that the $R^2$ values are very close to each other, indicating no relevant improvement in how well the model describes the data. The model p-values are all below the significance-threshold $\alpha$ so that they are not helpful in guiding model selection. The AIC tends to increase with additional included interactions (corresponding to a higher number of degrees of freedom). Therefore, we can select the original model without additional interactions of covariates to be the most accurate in the presented case (where both SEAP- and concentration-data was log-transformed). The ANOVAS shown above indicate that the additional included interactions between covariates are not significant and therefore do not contribute to the model explaining the data. 
+
+Further, it can be observed that for all models, the interaction between log(concentration) and $figure = 1d$ has a very low p-value, whereas the p-values for correlation with other figures are much higher. In the latter two models, a significant p-value is also detected for $figure = 1e$. As figure 1d contains the full functional circuit, it makes sense that here we observe a significant effect that we do not detect in the controls. 
+
+When focusing on the best model ("lm_seapLog_concLog", no additional covariate-interactions), we can explore the summary in more detail (the summary can be found earlier in this exploration). Looking at the p-values for each slope reveals significant observations only for cytokine interactions in $figure = 1d$. More specifically, we observe a p-value of 8.23e-07 for *cytokineIL-4 and IL-13:figure1d* and a p-value of 6.68e-01 for *cytokineIL-4:figure1e* whereas interactions of cytokines with other values of the figure-variable do not yield p-values below $\alpha = 0.05$. This implies that a cytokine-dependent effect if only expected for the experimental setup depicted in figure 1d. 
+
+## Short summary
+
+To characterize the behavior of the genetic circuit, a multiple regression model was applied to the measurements. The selected model describes the relation of the log-transformed response (SEAP) to the logarithm of cytokine concentration and further incorporates the multiple repetitions of the experiment and experimental setup ("figure"). Interactions between the different covariates were tested. The results were assessed in terms of the Akaike information criterion (AIC) and analyses of variance (ANOVA). This evaluation indicates the use of the basic model without including addition covariate interactions. This multiple regression model implies that a response of the circuit to cytokines is only observed with the full architecture as depicted in figure 1d. 
+
+## Supplementary information
+
+The relation between secreted alkaline phosphatase expression (SEAP) and cytokine treatment was investigated using a multiple regression model. The model includes covariates for experimental repetitions and the tested circuit ("figure"). The continuous variables were log-transformed, yielding the following model:
+$$
+log(SEAP) = (log(concentration) + experiment + cytokine) * figure
+$$
+In an ANOVA, all included covariates yielded significant p-values at $\alpha = 0.05$, indicating that further simplification of the model would lead to a loss of ability to describe the data. Additionally, the following different models were tested:
+
+* SEAP = (concentration + experiment + cytokine) \* figure
+* log(SEAP) = (concentration + experiment + cytokine) \* figure
+* SEAP = (log(concentration) + experiment + cytokine) \* figure
+* log(SEAP) = (log(concentration) + (experiment\*cytokine))\*figure
+* log(SEAP) = ((log(concentration)\*experiment) + cytokine)\*figure
+* log(SEAP) = ((log(concentration)\*cytokine) + experiment)\*figure
+* log(SEAP) = log(concentration)\*experiment\*cytokine\*figure
+
+Guided by $R^2$ values of the fits, the implemented model (mentioned above) was selected. The $R^2$ values can be found in the tables below:
+
+```{r, results = "asis", echo=FALSE}
+knitr::kable(rsq_df, format = "latex", align = "llc", 
+             booktabs = TRUE, linesep = c('', '', '', '\\addlinespace'),
+             caption = "R-squared values for the models fitted to the data prior and after log-transformation.") %>% 
+  kable_styling(position="center", font_size = 9, latex_options = "hold_position")
+```
+
+First, the effect of log-transforming the continous variables was evaluated. The $R^2$ values indicate that using the logarithmic values for both SEAP and cytokine concentrations resulted in the best fitting model. 
+
+Next, we tested incorporation of covariate interactions in the model:
+
+```{r, results = "asis", echo=FALSE}
+knitr::kable(extended_models, format = "latex", align = "lrrr", 
+             booktabs = TRUE,
+             caption = "Analysis of different models including interactions between covariates. p values from an ANOVA are indicated for log(concentration)") %>% 
+  kable_styling(position="center", font_size = 9, latex_options = "hold_position") %>% 
+  column_spec(column = 1, width = "6.5cm") %>% 
+  column_spec(column = c(2:4), width = "1.5cm")
+```
+
+As shown above, including additional interactions did not result in a notable effect in the $R^2$ value but in an increase in AIC. As all p-values observed in ANOVA for different models were not significant, the decision was guided by the AIC. Additional interactions increase the complexity of the model. An increase in complexity without significant improvements in the model is not desirable. Therefore, the base-model without additional interactions was selected.
+
+The coefficients of the selected model indicate statistical significance for interactions mainly with "figure = 1d". As we expect a meaningful response to only occur in this full circuit architecture, it is intuitive that the model returns more accurate predictions. 
+
+```{r, results = "asis", echo=FALSE}
+knitr::kable(anova(lm_seapLog_concLog), format = "latex", align = "lrrr", 
+             booktabs = TRUE,
+             caption = "ANOVA of the selected model.") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+```{r, results = "asis", echo=FALSE}
+knitr::kable(summary(lm_seapLog_concLog)$coefficients, format = "latex", align = "lrrr", 
+             booktabs = TRUE,
+             caption = "Coefficients of the selected model.") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+# Task 11.3 - Slope in Figure 1d
+
+In previous analysis, we used the categorical variable "figure" as covariate. Here we now replace it by a binary variable that is true only for the data depicted in the figure 1d. The interpretation here is to differentiate between full circuit and controls and to check for a difference between the SEAP-level. 
+
+We use the following model to correlate figure and other covariates:
+
+lm(seap_log ~ concentration_log + experiment + cytokine + figure +
+(concentration_log + experiment + cytokine):bin_1d
+
+```{r}
+dat1_withlog %>% mutate(bin_1d = figure == "1d") -> dat1_withBinary
+
+# Original model = conc + exp + cyt + fig + (conc + exp + cyt):fig
+lm113 <- lm(seap_log ~ concentration_log + experiment + cytokine + figure +
+(concentration_log + experiment + cytokine):bin_1d, dat1_withBinary)
+
+summary(lm113)
+
+anova(lm113)
+
+AIC(lm113)
+```
+
+In the summary and the ANOVA, we can observe a p-value below the significance level $\alpha = 0.05$ for the interaction *concentration_log:bin_1d*. This indicates that there is a significant interaction between the SEAP-level and the binary covariate for figure 1d. This implies that there likely is a functional difference in the full circuit and the circuits in the other figures (controls).
+
+The statistical analysis returns an AIC value of 231 and an $R^2$ value for the fit of 0.98. The $R^2$ indicates that this model explains the data very well. As indicated in the exercise text, the AIC can be used as guidance when selecting a model with a lack of prior knowledge. Here, we have an experimental setup and can adjust the model accordingly to answer the given question (controls vs. full circuit response). 
+
+
+
+
+
+
+
+
+
