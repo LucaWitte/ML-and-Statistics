@@ -1,0 +1,207 @@
+---
+title: "isar exercise sheet 05"
+author: "Luca Witte"
+date: "2022-10-31"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exercise sheet 5 
+
+## Exercise 5.1 - Post-hoc power
+
+The dataset from exercise sheet 3 is reused. It contains measurements of lung function for 40 astmathic individuals. 20 of them were treated with a novel compound ("Treatment"), the other 20 individuals were given a placebo ("Control"). 
+```{r}
+lung_data <- read.csv("./data/lung_data.csv")
+lung_data$Trial.arm <- as.factor(lung_data$Trial.arm)
+summary(lung_data)
+```
+The *post-hoc* power of a t-test investigating a difference in lung function between the groups is calculated as follows:
+```{r}
+alpha_1 = 0.05
+sigma_1 = sd(lung_data[lung_data$Trial.arm == "Control",][, "Lung.function"])
+delta_1 = abs(mean(lung_data[lung_data$Trial.arm == "Control",][, "Lung.function"]) - 
+  mean(lung_data[lung_data$Trial.arm == "Treatment",][, "Lung.function"]))
+  
+power.t.test(n = 20, delta = delta_1, sd = sigma_1, sig.level = alpha_1, power = NULL,
+type = "two.sample", strict = TRUE)$power
+
+```
+For $\delta$, the difference in means between both groups was used. $\delta$ used in the calculation therefore was 0.325. This is the best available approximation for the true difference in means. This yields the following hypotheses:
+
+$$
+\begin{aligned}
+&H_0:\ \mu_{control} - \mu_{treatment} = 0 \\
+&H_1:\ \mu_{control} - \mu_{treatment} = \delta \ne 0 
+\end{aligned}
+$$
+The power describes the probability that $H_1$ is correctly selected when $H_1$ is true. This metric depends on the significance level ($\alpha$), the effect size and the sample size. In the given case, the alternative hypothesis $H_1$ is:
+
+$$
+\begin{aligned}
+\mu_1 &= \mu_{treatment} \\
+&\ne \mu_{control}\\ 
+\sigma_{1} &= \sigma_{control} \\
+&\ \ \ \ \ \  with: \\
+&\alpha = 0.05 \\
+\end{aligned}
+$$
+Using the *power.t.test* function in R, a power value of approximately 0.55 is returned. This value lies below the commonly used threshold of 0.8, showing that a larger sample size would be necessary to obtain reliable results. This type of investigation should be conducted in the design step before an experiment is conducted, to work out the necessary sample size for reliable results. A *post-hoc* power analysis is less reliable, as it is based on a random parameter $\delta_{sample}$. This quantity is approximated from the sample itself and can deviate from the true difference in means $\delta$. When evaluating the $\delta$ from control experiments for prospective studies, different power values can be obtained. 
+
+This behaviour is further explored by generating a large number (10000) of normally distributed random samples. Two data sets of $n = 20$ with a true difference in means of $\delta = 0.5$ are drawn and the two groups are compared. The standard deviation $\sigma$ is calculated from the pool of both samples. 
+
+```{r, fig.width= 4, fig.height= 4, fig.align = 'center' }
+alpha_2 = 0.05
+plot(x =1, y= 1,type="n", ylim = c(0,1), xlim = c(0,1),
+     ylab = "post-hoc power", xlab = "p-value from t-test" )
+for(i in c(1:10000)){  
+  control <- rnorm(20, mean = 0, sd = 1)
+  treatment <- rnorm(20, mean = 0.5, sd = 1)
+  
+  sigma_2 = sqrt(var(c(control, treatment)))
+  delta_2 = abs(mean(control) - mean(treatment))
+  
+  p_val <- t.test(control, treatment)$p.value
+  power <- power.t.test(n = 20, delta = delta_2, sd = sigma_2, 
+                        sig.level = alpha_2, power = NULL,
+                        type = "two.sample", strict = TRUE)$power
+  points(x = p_val, y = power, pch = 16, cex = 0.3)
+}
+
+```
+From the plot above, it is clear that there is an inverse correlation between the p-value and the *post-hoc* power of the t-test. Samples with a lower p-value therefore have a higher power. Though, the parameters for the distributions from which the samples were drawn remain constant, a wide range of p-values and power values is covered. This shows how much the *post-hoc* power depends on the randomly drawn values and why it should be evaluated before conducting a study. Subsequently, evaluating power *post-hoc* based on the (random) samples is not a reliable approach and should be avoided. It confuses sample-based and population-level parameters. To avoid these issues, control experiments can be used to estimate necessary population parameters to evaluate the power in the planning step of an experiment. In this step, the sample size is often adjusted to reach a desired power.
+
+## Exercise 5.2 - Unequal sample sizes
+
+In this task, two normally distributed samples are generated. The two samples have a true difference in means of $\delta = 1$ and a shared standard deviation of $\sigma = 1$. A t-test is conducted to compare both samples and obtain a p-value. This sampling is repeated a large number of times (500) and the fraction of samples for which the null is rejected is recorded. 
+
+The described workflow is repeated 17 times. In each iteration, a total total sample size of 40 is distributed between both the control and the treatment group. The fraction of samples in each group is changed in each iteration to investigate how group imbalance affects the outcome of the t-test. 
+
+```{r}
+sigma3 <- 1
+alpha_3 = 0.05
+groups <- seq(0.1,0.9, by= 0.05)
+reps <- 500 # can be increased
+
+frac_rej_vec <- rep(0, length(groups))
+
+for(frac in groups){ 
+  size_A <- 40*frac
+  size_B <- 40*(1-frac)
+  num_rejected <- 0
+  
+  for(i in c(1:reps)){  
+    control <- rnorm(size_A, mean = 0, sd = 1)
+    treatment <- rnorm(size_B, mean = 1, sd = 1)
+    
+    sigma_2 = sqrt(var(c(control, treatment)))
+    delta_2 = abs(mean(control) - mean(treatment))
+    
+    p_val <- t.test(control, treatment)$p.value
+    if(p_val < alpha_3){ 
+      num_rejected <- num_rejected + 1 
+    }
+  }
+  
+  frac_rej_vec[which(groups == frac)] <- num_rejected/reps
+}
+
+plot(x= groups, y = frac_rej_vec, pch = 16, 
+     xlab = "Fraction of samples in control",
+     ylab = "Fraction of rejected nulls",
+     main = paste0("number of repeats = ", reps))
+
+```
+As an additional exploration, different numbers of repetitions were run:
+
+```{r}
+sigma3 <- 1
+alpha_3 = 0.05
+groups <- seq(0.1,0.9, by= 0.05)
+reps <- c(10,100,1000, 10000)
+
+par(mfrow = c(2,2))
+for(rep_num in reps){
+  frac_rej_vec <- rep(0, length(groups))
+
+  for(frac in groups){ 
+    size_A <- 40*frac
+    size_B <- 40*(1-frac)
+    num_rejected <- 0
+    
+    for(i in c(1:rep_num)){  
+      control <- rnorm(size_A, mean = 0, sd = 1)
+      treatment <- rnorm(size_B, mean = 1, sd = 1)
+      
+      sigma_2 = sqrt(var(c(control, treatment)))
+      delta_2 = abs(mean(control) - mean(treatment))
+      
+      p_val <- t.test(control, treatment)$p.value
+      if(p_val < alpha_3){ 
+        num_rejected <- num_rejected + 1 
+      }
+    }
+    
+    frac_rej_vec[which(groups == frac)] <- num_rejected/rep_num
+  }
+  
+  plot(x= groups, y = frac_rej_vec, pch = 16, 
+       xlab = "Fraction of samples in control",
+       ylab = "Fraction of rejected nulls",
+       main = paste0("number of repeats = ", rep_num))
+}
+```
+
+As depicted above, plotting the fraction of rejected nulls against the group imbalance yields a parabolic shape with a maximum at a sample fraction of 0.5. As discussed in the lecture, larger sample sizes increase the power of a t-test. As there is a true difference in means, we can expect therefore the fraction of p-values below the significance threshold to increase with larger sample sizes. Subsequently it makes sense to maximize the size of both compared samples to reduce the impact outliers have on the sample metrics. As the total sample size is fixed, a fraction of 50% in each sample yields the most reliable results. Further, in the lecture a warning was issued that for small sample sizes, the effect size tends to be overestimated. This is a further reason to not pick small sample sizes in either group.  
+
+## Exercise 5.3 - Beyond Fisher’s exact test 
+
+In this exercise, cancer patients are compared to a control group. In the group of 10 cancer patients, 9 have a mutation at a specific genomic position, whereas only 7 out of 15 control individuals share the same mutation. A fisher's exact test is used to investigate, whether the mutation is enriched in cancer patients. The null hypothesis is:
+$$H_0:\ \rho = \rho_{cancer} = \rho_{control}$$
+Where $\rho$ defines the probability of the mutation. The null hypothesis states that there is no significant difference in the frequency of the mutation between the cancer and the control group. Subsequently, if the null is not rejected, no association between the two categorical variables "cancer" and "mutation" is expected from the sample data. 
+
+```{r}
+alpha4 <- 0.05
+control <- 15
+cancer <- 10
+fraction_control <- 7/15
+fraction_cancer <- 9/10
+
+dat4_table <- data.frame(matrix(0,nrow = 2, ncol = 2))
+colnames(dat4_table) <- c("mutation", "no mutation")
+rownames(dat4_table) <- c("cancer", "control")
+dat4_table[,"mutation"] <- c(cancer * fraction_cancer, 
+                           control * fraction_control)
+dat4_table[,"no mutation"] <- c(cancer -(cancer * fraction_cancer), 
+                           control -(control * fraction_control))
+mosaicplot(dat4_table,
+  main = "Mosaic plot - Exercise 5.3",
+  color = TRUE
+)
+fisher.test(dat4_table)
+
+```
+As can be seen above, Fisher’s exact test returns a p-value of 0.04045. This leads us to reject the null, indicating that there is a significant difference in the frequency of mutations between cancer patients and control.
+
+The crux of the matter is that this approach becomes much more complex when investigating a contingency tables larger than 2 x 2. In biology, most observations have multiple contributing factors. Sticking with the given example, it is accepted knowledge that cancer is related to a variety of cellular changes and cannot be explained by a single factor (e.g. a mutation at a specific position). Therefore, a much higher amount of information needs to be considered in many biological contexts. Additionally, biological changes often are continuous observations. As an example, gene expression levels might change in a diseased cell. To use Fisher's exact test, a cutoff needs to implemented that does not reflect the continuous nature of the observation. 
+
+Further, biology offers many excellent examples of "correlation does not equal causation". Diseases like cancer change important biological functions and therefore observable changes (e.g. mutations) might not be a cause of a disease, but rather a symptom. A simple test including one observable does not offer any information on this and therefore the results should be interpreted carefully.
+
+An alternative to Fisher's exact test is the Barnard's unconditional test (*https://doi.org/10.1038/156177a0*). It can be implemented using the *Barnard* package in R:
+
+```{r}
+if(!require("Barnard")){
+    install.packages("Barnard")
+}
+library("Barnard")
+
+barnard.test(dat4_table[1,1], dat4_table[1,2],
+             dat4_table[2,1], dat4_table[2,2])
+```
+As can be seen above, the Barnard's test returns a lower p-value. Wikipedia describes it as "more powerful [than Fisher's exact test] for the vast majority of experimental designs" for 2 x 2 tables (*https://en.wikipedia.org/wiki/Barnard%27s_test*, 01.11.22). This difference decreases with an increase in sample size. More details on the differences between Fisher's and Barnard's tests have been summarized by *Mehta and Hilton* in an excellent article (*https://doi.org/10.2307/2685184*).
+
+
+
