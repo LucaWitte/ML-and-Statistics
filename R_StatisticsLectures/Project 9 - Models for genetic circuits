@@ -1,0 +1,239 @@
+---
+title: "isar Exercise sheet 9"
+author: "Luca Witte"
+date: "2022-11-25"
+output: pdf_document
+
+header-includes:
+  \usepackage[labelfont = bf, font =  {small, sf},
+  singlelinecheck=true, margin=22pt]{caption}
+  \usepackage{float}
+  \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(gridExtra)
+library(kableExtra)
+
+dat1 <- read.csv("./data/genetic_circuit.csv")
+
+```
+
+# Task 9.1 - genetic circuits
+
+```{r,  fig.cap="\\textbf{Recreation of subfigures 1c - 1f.} A cytokine sensing genetic circuit was tested and compared to positive and negative controls. For further information, consult the original paper.", warning=FALSE, message=FALSE, error=FALSE, results = "asis", echo=FALSE}
+
+dat1[dat1$cytokine == "IL-4 and IL-13", "cytokine"] <- "IL-4/IL-13"
+
+dat1$cytokine = factor(dat1$cytokine, 
+    levels = c("IL-4", "IL-13", "IL-4/IL-13"), ordered = TRUE)
+
+dat1 %>% group_by(concentration, cytokine, figure, experiment) %>% 
+  summarise( Mean = mean(seap)) -> Out_1
+
+Out_1 %>% group_by(concentration, cytokine, figure) %>% 
+  summarise(std.error = sd(Mean),
+            mean_allexp = mean(Mean)) -> Out_2
+
+# Figure 1c
+Fig_dat <- Out_2[Out_2$figure == "1c",]
+gg1c <- ggplot(Fig_dat, 
+       aes(x = as.factor(concentration),
+           y = mean_allexp,
+           fill = cytokine)) +
+  geom_errorbar(aes(ymin=mean_allexp-std.error,
+                    ymax=mean_allexp+std.error), 
+                width=.5,
+                 position=position_dodge(.9)) +
+    geom_bar(stat = "identity",
+           position = "dodge") +
+    ylim(0,10)+ 
+   geom_text(x=1.5, y=10, 
+             label="pLS12",
+             size=3)+
+  scale_fill_manual(values = c("black", "lightgray", "darkgray"))+
+  xlab(expression("Cytokine concentration (pg "~mL^-1~")" )) +
+  ylab(expression("SEAP (U"~L^-1~")" )) +
+  theme_classic() +
+  theme(legend.key.size = unit(0.15, 'cm')) +
+  theme(plot.margin = unit(c(0.1,0.1,0.1,0.1), "cm"))
+  
+  
+# Figure 1d
+Fig_dat <- Out_2[Out_2$figure == "1d",]
+gg1d <- ggplot(Fig_dat, 
+       aes(x = as.factor(concentration),
+           y = mean_allexp,
+           fill = cytokine)) +
+  geom_errorbar(aes(ymin=mean_allexp-std.error,
+                    ymax=mean_allexp+std.error), 
+                width=.5,
+                 position=position_dodge(.9)) +
+    geom_bar(stat = "identity",
+           position = "dodge") +
+    ylim(0,250)+ 
+   geom_text(x=1.5, y=210, 
+             label="pCH23 \npCH24 \npLS16 \npLS12",
+             size=3)+
+  scale_fill_manual(values = c("black", "lightgray", "darkgray"))+
+  xlab(expression("Cytokine concentration (pg "~mL^-1~")" )) +
+  ylab(expression("SEAP (U"~L^-1~")" )) +
+  theme_classic() +
+  theme(legend.key.size = unit(0.15, 'cm')) +
+  theme(plot.margin = unit(c(0.1,0.1,0.1,0.1), "cm"))
+  
+# Figure 1e
+Fig_dat <- Out_2[Out_2$figure == "1e",]
+gg1e <- ggplot(Fig_dat, 
+       aes(x = as.factor(concentration),
+           y = mean_allexp,
+           fill = cytokine)) +
+  geom_errorbar(aes(ymin=mean_allexp-std.error,
+                    ymax=mean_allexp+std.error), 
+                width=.5,
+                 position=position_dodge(.9)) +
+    geom_bar(stat = "identity",
+           position = "dodge") +
+    ylim(0,10)+ 
+   geom_text(x=1.5, y=9, 
+             label="pCH23 \npCH24 \npLS12",
+             size=3)+
+  scale_fill_manual(values = c("black", "lightgray", "darkgray"))+
+  xlab(expression("Cytokine concentration (pg "~mL^-1~")" )) +
+  ylab(expression("SEAP (U"~L^-1~")" )) +
+  theme_classic() +
+  theme(legend.key.size = unit(0.15, 'cm')) +
+  theme(plot.margin = unit(c(0.5,0.1,0.1,0.1), "cm"))
+  
+# Figure 1f
+Fig_dat <- Out_2[Out_2$figure == "1f",]
+gg1f <- ggplot(Fig_dat, 
+       aes(x = as.factor(concentration),
+           y = mean_allexp,
+           fill = cytokine)) +
+        geom_errorbar(aes(ymin=mean_allexp-std.error,
+                    ymax=mean_allexp+std.error), 
+                width=.5,
+                 position=position_dodge(.9)) +
+       geom_bar(stat = "identity",
+           position = "dodge") +
+    ylim(0,30) + 
+   geom_text(x=2.5, y=30, 
+             label="pSEAP2-control",
+             size=3) +
+  scale_fill_manual(values = c("black", "lightgray", "darkgray"))+
+  xlab(expression("Cytokine concentration (pg "~mL^-1~")" )) +
+  ylab(expression("SEAP (U"~L^-1~")" )) +
+  theme_classic() +
+  theme(legend.key.size = unit(0.15, 'cm')) +
+  theme(plot.margin = unit(c(0.5,0.1,0.1,0.1), "cm"))
+
+  
+
+grid.arrange(gg1c, gg1d, gg1e, gg1f, nrow = 2)
+
+```
+
+Here, a figure from the paper *Sensing and responding to allergic response cytokines through a genetically encoded circuit* was recreated. As the axis breaks were omitted, the axis-range in figures *1c* and *1e* are adjusted. 
+
+An interesting observation is found in figure *1d* where it appears that the bar depicting 1000 $pg/mL$ IL-13 is higher than in the publication. This might be due to different pre-processing of the data in the provided data set. Similar small deviations are observed in other bars, which leads the author of this report to expect that the data set is not complete. The overall trends and changes are consistent with figure 1 from the paper. For further information, consult *Chassin et al* (DOI: 10.1038/s41467-017-01211-1).
+
+# Task 9.2 - Analysis 
+
+Hereafter, a model is fitted to the data depicted in task 1. The data contains measurements of a colorimetric reaction (SEAP) that serves as a proxy for expression level. A genetic circuit responding to cytokine is tested. The datasets labeled "1c" and "1e" were obtained from negative controls. "1d" is the full circuit and "1f" a positive control. From the plots in subtask 1, it is clear that both negative controls and the positive control have an approximately constant level of SEAP signal. The signal of the full circuit appears to increase constantly with the cytokine concentration for all 3 cytokine-treatments. Though, the increases in response to different treatments appear to have different slopes, therefore the author of this report decided to fit a separate model to each cytokine and create separate plots. 
+
+The used cytokine concentrations span two orders of magnitude. Therefore, the concentration is log-transformed and a linear model us fitted afterwards. For each figure and cytokine, a model is fitted for:
+$$mean(SEAP\ [U\ L^{-1}]) \sim log(cytokine\ [pg\ mL^{-1}])$$
+Approximately logarithmic curves are often observed in biological systems as binding sites get saturated at certain concentrations. Therefore the observed behavior is not surprising.
+
+```{r, results = "asis", echo=FALSE, out.width = '90%', fig.align="center", fig.cap="\\textbf{Linear models fitted to the provided data.} Analysis is stratified by cytokine treatment. Colors represent different circuit architectures. \"1c\" and \"1e\" are negative controls. \"1d\" is the full circuit and \"1f\" the positive control. Filled circles indicate the mean of all measurements for a condition, crosses represent the individual values."}
+var_cyt_vec <- names(table(dat1$cytokine))
+var_fig_vec <- names(table(dat1$figure))
+
+
+par(mfrow = c(2,2), mar = c(4.5,4.5,1.5,1))
+col_vec <- c("black", "red", "lightgreen", "darkblue")
+lty_vec = c(1,1,2,1)
+
+
+p_val_df <- data.frame(matrix(NA, nrow = 12, ncol = 3))
+colnames(p_val_df) <- c("cytokine", "figure", "p-value")
+p_val_df[,1] <- rep(var_cyt_vec, each = length(var_fig_vec))
+p_val_df[,2] <- rep(var_fig_vec, length(var_cyt_vec))
+
+counter2 <- 1
+  
+for(var_cyt in var_cyt_vec){
+  
+  plot(x = 1, y = 1, type = "n",
+     xlim = c(9,1000), log = "x",
+     ylim = c(0,250), las = 2,
+     xlab = expression("Cytokine concentration (pg "~mL^-1~")" ),
+     ylab = expression("SEAP (U"~L^-1~")" ))
+  counter <-  0
+  
+  for(var_fig in var_fig_vec){
+  
+    counter <- counter + 1
+    dat1[dat1$cytokine == var_cyt &
+           dat1$figure == var_fig,] %>% 
+      group_by(concentration) %>% 
+      summarise(Mean = mean(seap)) -> means_tibble
+    
+    means_model <- lm(Mean ~ log10(concentration) ,data = means_tibble)
+    p_val_df[counter2,3] <- signif(summary(means_model)$coefficients[2,4],
+                                   digits=3)
+    
+    points(x = pull(means_tibble, 1), y = pull(means_tibble, 2),
+           col = alpha(col_vec[counter], alpha = 1), 
+           pch = 19, cex = 0.75)
+    
+    seap_tibble <- dat1[dat1$cytokine == var_cyt &
+           dat1$figure == var_fig,]
+    
+    points(x = pull(seap_tibble, 1), y =pull(seap_tibble, 2),
+           col = alpha(col_vec[counter], alpha = 0.3), 
+           pch = 4, cex = 0.8)
+    
+    abline(a = summary(means_model)$coefficients[1,1],
+           b = summary(means_model)$coefficients[2,1],
+           col = col_vec[counter],
+           lty = lty_vec[counter]) 
+    legend("topleft", col = col_vec, 
+           lty = lty_vec,
+           legend = c("1c", "1d", "1e", "1f"),
+           cex = 0.65, title = "figure")
+    counter2 <- counter2 + 1
+  }
+  title(paste0(var_cyt))
+}
+
+```
+
+The slopes were found to be very similar between the linear models for different cytokine treatments. As these values are relatively close, all cytokine treatments might be pooled in subsequent analysis if desired. Fitting one model to all three treatments might suffice, but this depends on the following workflow.
+
+Further analysis could include stratification by experiment to observe systematic differences and batch effects (e.g. between different individuals conducting the experiment, devices, callibrations etc.). It appears that samples of different experiments cluster together, indicating presence of batch effects. 
+
+In general, the controls are functional in so far that no cytokine concentration-dependent increase in SEAP-signal is observed. Though it can be observed that the *positive control* is insufficient for the presented application. Its average signal lies below the signal generated by the complete circuit from the lowest cytokine concentrations. This is also obvious from the barplots shown above. Therefore, it is not clear if the data is even valuable, as the measurements might lie outside the calibrated range. The experiment needs to be repeated with a different, appropriate positive control. 
+
+Further, it can be observed that the spread of the individual measurements increases with larger cytokine-concentrations. The residuals of the fit to the mean remain relatively constant. The p-values for the linear models are given below. Interestingly, the lowest p-values are obtained for 1d, whereas the controls are not always below the significance threshold of 0.05. The reason for that might be the absence of a clear trend and low absolute values. As the controls are expected to not change with cytokine concentration, all measurements for one circuit have similar expected values. These expected values are relatively low, therefore the noise in the measurement is proportionally higher. This fluctuation might increase or decrease the values, thereby increasing the residuals with no trend being present in the data. 
+
+```{r, results = "asis", echo=FALSE}
+knitr::kable(p_val_df, format = "latex", align = "lcc", 
+             booktabs = TRUE, linesep = c('', '', '', '\\addlinespace'),
+             caption = "p-values for the slopes of the linear models fitted to the data in figure 2.") %>% 
+  kable_styling(position="center", font_size = 9, latex_options = "hold_position")%>% 
+  column_spec(column = 1, width = "3cm") %>% 
+  column_spec(column = c(2:3), width = "1.5cm")
+```
+
+$\\$
+$\\$
+
+
+**Summary of the findings:**
+
+Here we present a synthetic dual cytokine sensor for IL-4 and IL-13, activating a minimal promoter via the JAK/STAT pathway. The receptor shows a reliable concentration-dependent response to one or both cytokines that is not seen in the negative controls.
+
