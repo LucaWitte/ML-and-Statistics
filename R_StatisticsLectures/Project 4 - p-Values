@@ -1,0 +1,208 @@
+---
+title: "Introduction to Statistics and R - Exercise 4"
+author: "Luca Witte"
+date: "2022-10-23"
+output: pdf_document
+
+header-includes:
+  \usepackage[labelfont = bf, font =  {small, sf},
+  singlelinecheck=true, margin=22pt]{caption}
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2) 
+library(tidyr)
+library(kableExtra)
+
+data <- read.csv("./data/p-value_questionnaire.csv")
+data_cbg <- read.csv("./data/cbg_p_questionnaire.csv")
+colnames(data_cbg)[1] <- "ID"
+
+```
+
+## Task 4.1
+
+### Introduction
+
+A group of 11 individuals was asked to fill in a questionnaire about p-values. The questionnaire consisted of 6 statements that were to be answered with either "true" or "false". Further, height and age of the individuals were recorded. 
+
+The questionnaire starts by introducing the following premise: \newline
+A comparison of a control and a treatment group using a *t*-test yielded the following results:
+$$t = 2.7,\ d.f. = 18,\ p = 0.01$$
+The answer "true" indicates that the respective statement follows from the given information.
+
+The questionnaire consists of the following questions (taken from Oakes (1986); Haller and Krauss (2002)):
+
+1. You have absolutely disproved the null hypothesis (that is, there is no difference between the population means).
+2. You have found the probability of the null hypothesis being true.
+3. You have absolutely proved your experimental hypothesis (that there is a difference between the population means).
+4. You can deduce the probability of the experimental hypothesis being true.
+5. You know, if you decide to reject the null hypothesis, the probability that you are making the wrong decision.
+6. You have a reliable experimental finding in the sense that if, hypothetically, the experiment were repeated a great number of times, you would obtain a significant result on 99% of occasions.
+
+All six statements are wrong. For two individuals, no height was recorded. For three individuals no data on age is available. The results of the questionnaire are given below:
+
+```{r, echo=FALSE}
+knitr::kable(data, format = "latex", align = "lcccccccc", 
+             booktabs = TRUE,
+             caption = "Answers obtained from the questionnaire. Height is indicated in cm, age is given in years.") %>% 
+  kable_styling(position="center", font_size = 9, latex_options = "hold_position")%>% 
+  column_spec(column = 1, width = "1.5cm") 
+```
+\newpage
+### Dataset 1 - students
+
+
+The first analysis is conducted on the data set. The answers were recorded from students. The fraction of correct responses for each question is depicted below:
+
+
+```{r, results = "asis", echo=FALSE, out.width = '65%', fig.align="center", fig.cap="Fraction of correct answers in data set 1."}
+par(mfrow = c(3,2), mar = c(2.5,4,2,2))
+
+for(i in c(1:(ncol(data)-3))){
+  num_cor <- (table(data[,i+3])[1])/nrow(data)
+  num_wron <- (table(data[,i+3])[2])/nrow(data)
+  barplot(c(num_cor,num_wron), ylab = "Fraction", names.arg = c("Correct answer", "Wrong answer"), ylim = c(0,1.17), col = c("lightblue", "pink"), yaxt = "n")
+  title(paste0("Question ", i))
+  axis(side = 2, pos = 0.05, , at = c(0,0.5,1))
+}
+
+```
+
+
+It can be seen that questions 1 and 6 yielded the highest fractions of correct responses. Questions 4 and 5 were answered wrong almost half of the times. 
+```{r, results = "asis", echo=FALSE, out.width = '50%', fig.align="center", fig.pos="H", fig.cap="Responses to each question for each individual. Right answers are indicated in light blue, wrong answers in pink."}
+dat_hm <- matrix(as.numeric(!data[,4:9]), nrow = nrow(data), ncol = ncol(data)-3)
+colnames(dat_hm) <- colnames(data)[4:9]
+rownames(dat_hm) <- paste("ID", data[,"ID"])
+
+heatmap(t(dat_hm), Colv = NA, Rowv = NA, col = c("pink", "cadetblue2"), scale = "none", xlab = "Surveyed individual", ylab = "Question number")
+
+```
+\ 
+
+```{r, results = "asis", echo=FALSE, fig.pos="H", out.width = '50%', fig.align="center", fig.cap="Number of correct responses per surveyed individual. The data mean is indicated by a grey dashed line."}
+dat_bars <- rowSums(dat_hm)
+
+barplot(dat_bars, xlab = "Surveyed individuals", ylab = "Number of correct responses", 
+        las=2, col = "lightsteelblue4")
+abline(a= 4.3, b = 0, lty = 2, col = "darkgray", lwd = 2)
+
+```
+As shown in the 2 plots above, only 5 individuals answered the whole survey correctly. 3 Individuals only answered two questions correctly.
+
+### Covariates
+In the next step of the statistical analysis, the covariates height and age are explored. From this first exploration, it can be concluded that the surveyed individuals are young adults.  
+
+```{r, results = "asis", fig.pos="H", echo=FALSE, out.width = '65%', fig.align="center", fig.cap="Distributions of covariates."}
+par(mfrow = c(1,2))
+hist(data$Height, breaks = 7, main = "Covariate: height",
+     ylab = "frequency", xlab = "Height in cm", col = "lightsteelblue4")
+hist(data$Age, breaks = 7, main = "Covariate: age",
+     ylab = "frequency", xlab = "Age in years", col = "lightsteelblue4")
+
+```
+The surveyed individuals have a height between 1.65 m and 1.95 m. The median lies at 1.8 m with 2 missing values. 
+
+The individuals lie in an age-range from 22 to 26 years, with 3 values missing. 6 individuals are 22 or 23 years old, whereas 2 individuals are older. The median of age therefore lies at 23. 
+```{r, results = "asis", echo=FALSE, fig.pos="H", out.width = '65%', fig.align="center", fig.cap="QQ-plots of covariates."}
+par(mfrow=c(1,2))
+qqnorm(data$Age, main = "QQ-plot: age", col = "lightsteelblue4", pch = 16)
+qqline(data$Age)
+
+qqnorm(data$Height, main = "QQ-plot: height", col = "lightsteelblue4", pch = 16)
+qqline(data$Height)
+```
+From the QQ-plots, it can be seen that height appears to be approximately normally distributed. Contrary, age is differs from the normal-line. This is expected, as age is a discrete variable and the recorded range is rather small, therefore, values cluster together due to the rounding error, even though the age in days might be normally distributed.
+
+### Stratification
+
+```{r, results = "asis", echo=FALSE, out.width = '65%', fig.align="center", fig.cap="Boxplots depicting the number of correct responses, grouped by height or age."}
+par(mfrow = c(1,2), mar = c(2,2,2,0.5))
+data_height_correct <- dat_bars[-c(1:2)]
+categ_height <- ifelse(na.omit(data$Height) < median(na.omit(data$Height)), T, F)
+height_strat <- data.frame(correct_answers = data_height_correct, stratification = categ_height)
+
+
+data_age_correct <- dat_bars[-c(1:2,10)]
+categ_age <- ifelse(na.omit(data$Age) < median(na.omit(data$Age)), T, F)
+age_strat <- data.frame(correct_answers = data_age_correct, stratification = categ_age)
+
+boxplot(height_strat$correct_answers ~ height_strat$stratification,
+        xlab = "", ylab = "Number of correct responses",outline=FALSE,
+        names=c("Height >= median","Height < median"),
+        main = "Responses stratified by height", cex.axis = 0.65)
+stripchart(height_strat$correct_answers ~ height_strat$stratification, vertical = TRUE, method = "jitter",cex = 0.85, col = "lightsteelblue4",
+             pch = 19, add = TRUE)
+
+boxplot(age_strat$correct_answers ~ age_strat$stratification,
+        xlab = "", ylab = "Number of correct responses",
+        names=c("Age >= median","Age < median"),outline=FALSE,
+        main = "Responses stratified by age", cex.axis = 0.65)
+stripchart(age_strat$correct_answers ~ age_strat$stratification, vertical = TRUE, method = "jitter",cex = 0.85, col = "lightsteelblue4", pch = 19, add = TRUE)
+
+```
+From this (small) data set, it seems like a size above 1.80 m and an age below 22 years is correlated with a higher number of correct responses. The metric "height" is not expected to have any causal relation to the number of correct answers, given that all surveyed individuals are adults. Similarly, as all participant ages lie above 20, no causal effect is expected. The observed effects most likely are caused by the small sample sizes. 
+
+On the other hand, with less restrictive samples, education level could be reflected in height and age. As an example, young children are expected to not understand the concept of p-values and therefore it might be reasonable to draw the connection of very young age or very low height to a low frequency of correct responses. 
+
+The data set is further limited by the fact, that for 2 or 3 individuals, height and age were not recorded respectively. This additionally decreases the sample size.
+
+### Data set 2 - CBG
+
+The second data set contains the answers of the Computational Biology Group at ETH Zürich to the same survey as discussed above. 18 individuals were asked the questions. In this data set, the answers are recorded without additional information on age or height. The full table of answers is given below:
+
+```{r, echo=FALSE}
+knitr::kable(data_cbg, format = "latex", align = "lcccccccc", 
+             booktabs = TRUE,
+             caption = "Results from the questionnaire in the cbg-group") %>% 
+  kable_styling(position="center", font_size = 9) %>% 
+  column_spec(column = 1, width = "1.5cm")
+```
+\newpage
+```{r, results = "asis", echo=FALSE, out.width = '55%', fig.pos="H", fig.align="center", fig.cap="Number of correct responses per surveyed individual in the cbg-group. The data mean is indicated by a grey dashed line."}
+par(mar= c(4,2,1,2))
+dat_cbg_fraction <- rowSums(!data_cbg[-1])
+barplot(dat_cbg_fraction, xlab = "Surveyed individuals", ylab = "Number of correct responses", las=2, col = "lightsteelblue4")
+abline(a= 4, b = 0, lty = 2, col = "darkgray", lwd = 2)
+
+```
+As shown above, the results in the research group appear to be slightly worse than in the previously discussed data set. The first data set had an average of 4.3 correct responses per individual, whereas this second survey yielded 4 correct responses per individual on average. Again, everyone surveyed answered at least two questions correctly.
+
+The results cannot be correlated with age or height, as these metrics were not recorded.
+```{r, results = "asis", fig.pos="H", echo=FALSE, out.width = '65%', fig.align="center", fig.cap="Fraction of correct answers in the cbg-data."}
+par(mfrow = c(3,2), mar = c(2.5,4,2,2))
+
+for(i in c(1:(ncol(data_cbg)-1))){
+  num_cor <- (table(data_cbg[,i+1])[1])/nrow(data_cbg)
+  num_wron <- (table(data_cbg[,i+1])[2])/nrow(data_cbg)
+  barplot(c(num_cor,num_wron), ylab = "Fraction", names.arg = c("Correct answer", "Wrong answer"), ylim = c(0,1.17), col = c("lightblue", "pink"), yaxt = "n")
+  title(paste0("Question ", i))
+  axis(side = 2, pos = 0.05, , at = c(0,0.5,1))
+}
+
+```
+As in the first data set, it is clear that question 1 has a relatively low number of wrong answers. Further, questions 2, 3 and 4 also were answered with high accuracy. Especially in question 4, the individuals from the second survey answered more frequently correct. On the contrary, question 5 was answered wrongly by approximately two thirds of the surveyed individuals.  
+
+## Task 4.2
+
+I have asked a friend who works as engineer in the field of ophthalmology. As such, she is familiar with the concept of p-values, but does not regularly use them. 
+
+**Question 1: You have absolutely disproved the null hypothesis**
+
+In t-testing, we compare a sample with a given Null hypothesis. Assuming this null hypothesis is true, we investigate how likely it is to obtain the sample data by chance. If this probability is lower than a given threshold, it is likely that there is an underlying true effect causing the deviation. This is not the same, as disproving the null hypothesis, as the p-value is still a random variable.
+
+In this context, I discussed with my friend about how the deviation from the true distribution is unknown for a random sample. We concluded that the main points are the condition that the null hypothesis is true and that we solely quantify how likely the data is obtained under a very specific assumption. This implies that in any case, the data *could* be obtained by chance. Therefore the null hypothesis might still hold true and it is not possible to "absolutely" disprove it.
+
+**Question 5: You know, if you decide to reject the null hypothesis, the probability that you are making the wrong decision. **
+
+As described for question 1, the p-value describes the likelihood of a specific data set given that the null hypothesis is true. My friend equated this with "the probability that you are making the wrong decision". As we don't know whether the null hypothesis is true and what the true mean is, we cannot draw any conclusions about the true statistics. This is the reason we have to focus on drawn samples. If we knew the underlying true statistics, there would be no use in conducting the experiment. Subsequently, it is not possible to know the probability of making a wrong or right decision.
+
+
+
+
+
+
