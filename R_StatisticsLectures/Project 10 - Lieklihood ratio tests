@@ -1,0 +1,230 @@
+---
+title: "isar Exercise sheet 10"
+author: "Luca Witte"
+date: "2022-12-02"
+output: pdf_document
+
+header-includes:
+  \usepackage[labelfont = bf, font =  {small, sf},
+  singlelinecheck=true, margin=22pt]{caption}
+  \usepackage{float}
+  \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(gridExtra)
+library(kableExtra)
+```
+
+# Task 10.1 - likelihood ratio test for a contingency table
+
+In exercise 5.3, we compared the frequency of a specific mutation in cancer patients to the frequency in a control group. Out of 10 cancer patients, 9 have a mutation at a specific genomic position. In the control group, only 7 out of 15 individuals share the same mutation. Previously, a Fisher's exact test and Barnard's unconditional test were used to investigate, whether the mutation is enriched in cancer patients.
+
+```{r}
+control_adenin <- 8
+control_other <- 7
+cancer_adenin <- 1
+cancer_other <- 9
+
+Task1_cont <- data.frame(matrix(
+c(control_adenin, cancer_adenin,
+  control_other, cancer_other),
+ncol = 2, byrow = TRUE))
+
+rownames(Task1_cont) = c("Adenin", "Other")
+colnames(Task1_cont) = c("Control", "Cancer")
+
+print(Task1_cont)
+```
+
+Here we use the $\Delta$ statistics to explore whether there is an enrichment of the mutation in cancer patients. The null hypothesis describes the absence of a systematic difference:
+
+$$H_0:\ \rho = \rho_{cancer} = \rho_{control}$$
+```{r}
+
+rho_other <- sum(Task1_cont[2, ])/sum(Task1_cont)
+prediction <- matrix(c(1 - rho_other, rho_other), 2) %*% colSums(Task1_cont)
+Delta <- 2*sum(Task1_cont*log(Task1_cont/prediction))
+(p_val <- pchisq(Delta, 1, lower.tail = FALSE))
+```
+The $\Delta$ statistics returns a p-value below the significance threshold of $\alpha = 0.05$, indicating that there likely is a true difference between the groups. We can compare this outcome the the Fisher's exact test and the $\chi^2$ tests:
+
+```{r, warning=FALSE}
+(p_val_fisher <- fisher.test(Task1_cont)$p.value)
+(p_val_chisq <- chisq.test(Task1_cont, correct = FALSE)$p.value)
+```
+All three tests return p-values indicating rejection of the null-hypothesis. A variation in the p-value is observed depending on the employed method. Especially the $\chi^2$ test should be interpreted with caution, as it generally assumes large sample sizes (often at least 50 samples are recommended). The R-function *chisq.test* also returns the warning: \newline
+**Chi-squared approximation may be incorrect** \newline
+Therefore the $\chi^2$ test might not be suited for the presented application. 
+
+From the obtained p-values, we can conclude that the data indicates a true difference in mutation frequency between cancer patients and control group. The identified correlation might hint at a biological connection of the genomic position to cancer. This connection could be studied using biochemical or bioinformatic approaches to identify causal explanations (gene function, changes in the protein, biochemical networks the gene is involved in, etc). Though, the author proposes to repeat the statistical analysis with a larger sample number before, as sequenced genomes are available from data bases and therefore it should not be very complicated to increase the (relatively small) number of samples.
+
+# Task 10.2 - Shiny data and linear regression of height
+
+At the point of writing (02.12.22), the indicated website is not accessible. Therefore a first analysis is conducted on the raw data:
+
+```{r}
+# The data is only available as xls -> converted to csv first in excel
+dat_task2 <- read.csv("./data/shiny_height_tool.csv", sep = ";")
+head(dat_task2)
+summary(dat_task2)
+table(dat_task2$Study)
+```
+
+From a first glance, we see that the dataset contains 562 individuals. For each of them, Sex (1 or 2, without explanation), subject height and height of both parents is recorded. Further the data contains information on "milk" (maybe consumption in glasses per day) and shoe size. The latter two observables contain missing values for 99 individuals. All individuals belong to *Study = Previous*, therefore this variable can be ignored. Further we see that all "Height_self"-values seem to correspond to expectations for grown-ups, from which we can conclude that no children were part of this study. 
+
+An obvious first investigation includes stratification by sex:
+
+```{r}
+dat_task2 %>% group_by(Sex) %>% 
+  summarise(mean_height = mean(Height_self),
+            med_height = median(Height_self),
+            mean_milk = mean(Milk, na.rm = TRUE),
+            med_milk = median(Milk, na.rm = TRUE),
+            mean_shoesize = mean(Shoe_size, na.rm = TRUE),
+            med_shoesize = median(Shoe_size, na.rm = TRUE))
+
+```
+Assuming that males are on average larger and have a larger average shoe size, we can assign the group *Sex = 1* to the males. This might not be true depending on the studied individuals, but is a reasonable assumption giving the lack of prior information. Therefore, the labels will be changed in the following analysis, assigning *Sex = 2* to female. Further we can observe that the mean of milk consumption does not differ much with gender. 
+
+The first task is to fit a linear model for subject height depending on parent heights. We can again have a look at the data before fitting:
+
+```{r}
+dat_task2 %>% 
+  mutate(Sex = recode(Sex, "1" = "Male", "2" = "Female")) -> dat_task2
+
+dat_task2 %>% group_by(Sex) %>% 
+  summarise(mean_height = mean(Height_self),
+            med_height = median(Height_self),
+            mean_height_father = mean(Height_father),
+            med_height_father = median(Height_father),
+            mean_height_mother = mean(Height_mother),
+            med_height_mother = median(Height_mother))
+
+```
+
+These findings are not very surprising - *Sex 1*/male height is on average is still higher than *Sex = 2*/female height and there seems to be no difference in parent heights between the two groups. To look at each individual, we can plot the data:
+
+```{r}
+
+gg_father <- ggplot(dat_task2, aes(x = Height_father, y = Height_self, col = Sex)) +
+  geom_point()
+
+gg_mother <- ggplot(dat_task2, aes(x = Height_mother, y = Height_self, col = Sex)) +
+  geom_point()
+
+grid.arrange(gg_father, gg_mother, nrow = 2)
+
+```
+Again, we see that males tend to be larger than females. This is true for both the individuals in the dataset and their parents (observed by comparing both plots). 
+
+```{r}
+max(dat_task2$Height_mother)
+dat_task2[which(
+  dat_task2$Height_mother == max(dat_task2$Height_mother)),]
+```
+  
+Further, a possible outlier is observed in the height of mothers with 214 cm. This is still smaller than the largest woman alive (https://en.wikipedia.org/wiki/Rumeysa_Gelgi; 02.12.22), therefore this could be a valid data point and is not removed. A look at the data point shows that the above-average height was not passed on to her son.
+
+With this first analysis, we can now fit the model as required in the task:
+
+$$subject\ height \sim height\ of\ mother + height\ of\ father + Sex$$
+
+# CHECK HERE AGAIN FOR FORMULA
+```{r}
+lm_fit <- lm(Height_self ~ Height_mother + Height_father + Sex, dat_task2)
+summary(lm_fit)
+
+gg_father <- ggplot(dat_task2, aes(x = Height_father, y = Height_self, col = Sex)) +
+  geom_point() +
+  geom_smooth(method = lm, formula = y ~ x) 
+
+gg_mother <- ggplot(dat_task2, aes(x = Height_mother, y = Height_self, col = Sex)) +
+  geom_point()+
+  geom_smooth(method = lm) 
+
+grid.arrange(gg_father, gg_mother, nrow = 2)
+
+```
+The linear model returns a slope of 0.376 for the height of the mother and 0.371 for the height of the father. This implies that a linear dependency could be present, indicating inheritance of height. Further, there is no strong difference between the parent's gender on inheritance of height (which is of interest from a genetics point). The returned slope for the sex-variable is 11.076, which also indicates a possible relationship.
+
+Although, the R-squared value of 0.586 returned by the fit is relatively low. This indicates that only approximately half of the statistically significant predictions based on the model are accurate. 
+
+We now expand the model to also include the shoe size:
+
+```{r}
+
+lm_fit <- lm(Height_self ~ Height_mother + Height_father + Sex + Shoe_size, dat_task2)
+summary(lm_fit)
+
+```
+When including shoe size, we observe lower slopes for the parent's heights. Further, higher p-values for Height_father and Sex are returned. This means that statistical significance is lost for those predictors. At the same time, the R-squared value increases to 0.793. 
+
+Here we essentially add a confounder - while shoe size is probably related to size of the individual (and thereby indirectly to their parent's heights and the individuals Sex), it is most likely not the cause of a person being more or less tall. Therefore we add an explanatory variable that correlates with the dependent variable, but does not have any causal relationship. 
+
+Another point to consider is that we loose almost 20% of the data by including shoe size as a independent variable as it is missing in 99 cases. The default setting of *lm* in R is *na.action = "na.omit"* which omits the entire row of the data set in the analysis. This is a good example of how missingness can influence the analysis of real world data, which is often more diverse and less complete than data obtained in clinical studies. 
+
+## Further exploration
+
+The task does not mention milk consumption as factor to be analyzed, but as the website with the shiny-app is not accessible, we can play around with the available data a bit more:
+
+```{r}
+dat2_male <- dat_task2[dat_task2$Sex == "Male",]
+dat2_female <- dat_task2[dat_task2$Sex == "Female",]
+
+h_male_milk <- hist(dat2_male$Milk, breaks = 30, plot = FALSE)
+h_female_milk <- hist(dat2_female$Milk, breaks = 30, plot = FALSE)
+
+plot(h_male_milk, col = alpha("blue", alpha = 0.3),
+     main = "Milk consumption histogram", ylim = c(0,100),
+     xlab = "Milk consumption")
+plot(h_female_milk, col = alpha("red", alpha = 0.3), add = T)
+
+
+legend("topright", fill = alpha(c("red", "blue"),0.3), 
+       legend = c("Female", "Male"))
+
+```
+It appears that milk-consumption does not vary too strongly with Sex. Most study participants score between 0 and 2 "Milk" in the data set. For lack of information about the data set, I will interpret this as "glasses consumed", most likely per day or week. We can now try to correlate shoe size and milk consumption:
+
+```{r}
+ggplot(dat_task2, aes(x = Milk, y = Shoe_size, col = Sex)) +
+  geom_point() +
+  geom_smooth(method = lm, formula = y ~ x) +
+  ylab("Shoe size") +
+  xlab("Milk consumption")
+
+```
+
+From this plot, it appears that female shoe size does not vary with milk consumption while it is implied that there might be a correlation between milk consumption and shoe size in males. Though one might be able to make a point about calcium consumption and development of the skeleton in early years, no strong conclusions should be drawn from this. If the "milk" variable refers to consumption in child-years or is somehow related to breast feeding, this correlation might indeed be interesting. In adults, shoe size will not change and therefore should not be influenced by milk consumption. Subsequently, no causal relation is expected if the "milk" variable refers to milk consumed as adult. 
+
+We can also investigate whether height of mother and father correlate. This might hint at whether people search for similarly sized partners:
+
+```{r}
+ggplot(dat_task2, aes(y = Height_father, x = Height_mother)) +
+  geom_point() +
+  geom_smooth(method = lm, formula = y ~ x) +
+  xlab("Height of mother") +
+  ylab("Height of father")
+
+```
+It indeed appears that there might be a slight correlation here. Though again, no strong conclusions should be drawn here without additional testing for correlation. 
+
+These are some of the possible correlations in the data set that appear somewhat interesting to explore. Others might not be worth the time of analyzing, as they appear senseless ("Are people of large fathers more likely to drink milk?" etc.). As you asked for feedback on the Shiny app, I rate my overall experience a solid 0/10. The website was not available and took a minute of loading until returning an error. I tried accessing it again on the afternoon of 05.12.22 and it still did not load. Therefore I added the additional data-exploration, as I assume the website to contain similar content.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
