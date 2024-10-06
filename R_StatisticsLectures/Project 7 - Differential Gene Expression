@@ -1,0 +1,471 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: '7: Programming - peptides'
+author: "Luca Witte"
+date: "10 November 2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 3, fig.width = 6)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse) # load for the functions used later
+seed_number <- 51628 # remember to use your personal seed
+```
+
+
+## Biological background
+
+This workbook was originally created by **Mathias Cardner** based on his analysis of data from **Philipp Koch** generated at the BSSE. Here is the biological background in Philipp's words:
+
+*"Many of the current antibiotics are failing because of the rapid development of resistance mechanism of bacteria. One clinically rather untapped source of novel antimicrobial agents are antimicrobial peptide (AMPs). AMPs are produced by members of all three domains of life (eukaryotes, bacteria, archaea,….mostly eukaryotes though) and, in addition to their ability to directly kill invading pathogens, may play a role in diverse biological processes (such as immunomodulation). Unlike commonly used antibiotics (e.g. penicillins or tetracyclines), which are naturally produced as secondary metabolites in a variety of bacterial organisms, AMPs are produced by standard transcription/translation (DNA->mRNA->peptide, by the ribosome). This makes them particularly attractive in the field of biotechnology, because they can be produced recombinantly (in producing host that we designed such as E. coli) and, if required, modified at the DNA level."*
+ 
+
+## Differential expression experiments
+
+Starting from 1,656 peptides in the antimicrobial database (APD) (`http://aps.unmc.edu/AP/main.php`), Philipp performed a BLAST search starting from each antimicrobial peptide (*starting point/parent*) to find peptides with a similar sequence (*children*) on all currently sequences genomes (ending up with a total of 12,000 peptides in the screen).
+
+The aim was to get as many closely related sequences to each starting point as possible and evaluate their antimicrobial activity using a model bacteria. In a nutshell, after cloning and all the microbiological work in *E. coli*, a large batch was developed consisting of bacteria which carry the individual peptide DNA on a plasmid (one bacteria carries one plasmid which encodes the DNA of one peptides).  The bacteria were left to grow and induce the transcription and translation of the AMP. If the peptide is active/toxic to the producing bacteria itself, it will die or grow slower.
+
+The cytotoxicity of all peptides was ultimately measured using RNA-seq. Therefore the peptide abundance is quantified as counts, and `DESeq2` was used to analyse the data and compare different conditions.  Sampling was performed at different time points (at induction and 1, 2 and 4h post).  Here we consider the differential expression between 0 and 4 hours, with the hypothesis that a depletion in DNA counts correlates to an active AMP being expressed.  Testing was performed one-sided: only for a negative log fold change.  $p$-values from the Wald test were adjusted using the Benjamini--Hochberg procedure to control the false discovery rate, along with the independent filtering provided by `DESeq2`.
+
+
+## Differential expression data
+
+The output of the differential expression analysis is stored as an `R` object in a file which we can read with `readRDS` 
+
+```{r}
+DESeq_data <- readRDS("./data/DESeq2_database.rds")
+dim(DESeq_data)
+head(DESeq_data)
+```
+
+From the dimensions of the data, we have results for `r nrow(DESeq_data)` peptides.  However `DESeq2` sets some of the $p$-values to `NA` when there are too few counts. We will remove them from our dataset
+
+```{r}
+DESeq_data <- filter(DESeq_data, !is.na(padj))
+```
+
+Then we check how many peptides are left, as well as computing how many have an adjusted $p$-value significant at the 5% level
+
+```{r}
+totalNumbers <- DESeq_data %>%
+  summarise(AAsequences = n(), DEsequences = sum(padj < 0.05))
+totalNumbers
+```
+
+
+## Sequence dictionary
+
+Information on the peptides is stored in a second file, which we read
+
+```{r}
+name_dictionary <- readRDS("./data/ID_trueName.rds")
+head(name_dictionary, 10)
+```
+
+Each peptide sequence has an individual `ID`. The final column, `trueName`, contains the APDatabase information of the given parent sequence. Thus, `trueName` corresponds to Gene Ontology (GO) terms and we want to assess for each `trueName` whether there is over- or under-representation of differential expression amongst its members.
+
+
+## Merging the data
+
+Since the information on the parent sequences is in `name_directory`, while the $p$-values are in `DESeq_data` we will merge the two data frames into one, keeping the rows of `DESeq_data`.  Since the same `ID` may be repeated in `name_directory` when the peptide has several parents, the joining replicates the $p$-values for each copy. 
+
+```{r}
+DESeq_name_df <- left_join(DESeq_data, name_dictionary)
+DESeq_name_df %>% select(ID, padj, trueName) %>% head(10)
+```
+
+
+## Fisher's exact test
+
+For each parent sequence, we wish to see if its children are enriched for significant differential expression, or see if there are more significant $p$-values than if they are spread uniformly across all peptides. This is the same setting as gene set enrichment analysis.
+
+To test for enrichment, we will perform a Fisher's exact test to assess the significance of drawing $k$ differentially expressed sequences amongst the $n$ children of a given starting point, from a population (all peptides) of size $N=$ `r totalNumbers$AAsequences` containing $K=$ `r totalNumbers$DEsequences` differentially expressed peptides (`r round(100 * totalNumbers$DEsequences/totalNumbers$AAsequences)` %). 
+Fisher's exact test is then run on the following contingency table:
+
+DE test | In `trueName` | Not in `trueName`
+------- | ------------- | -------------
+$\#\{q<0.05\}$    | $k$ | $K-k$
+$\#\{q\geq0.05\}$ | $n-k$ | $(N-K)-(n-k)$
+
+
+## Grouping and summarising
+
+To compute the number of significant/non-significant tests for each parent sequence, we can *group* and *summarise* as we've seen in Programming workbook 3.
+
+```{r}
+DESeq_name_df %>% group_by(trueName) %>%
+  summarise(k = sum(padj < 0.05), n_minus_k = sum(padj >= 0.05), 
+            n = n()) -> parent_df
+parent_df %>% select(k, n_minus_k, n, trueName) %>% head()
+```
+
+We actually already computed $N$ and $K$
+
+```{r}
+N <- totalNumbers$AAsequences
+K <- totalNumbers$DEsequences
+N_minus_K <- N - K
+K; N_minus_K; N
+```
+
+So we can add the other needed quantities to the data frame with `mutate`
+
+```{r}
+parent_df <- mutate(parent_df, K_minus_k = K - k, 
+                    Nk_minus_nK = N - K - n_minus_k) 
+nrow(parent_df)
+```
+
+Altogether we have results for `r nrow(parent_df)` parent sequences.
+
+
+## Alpha budgetting
+
+Without looking at the fraction of significant results, we know for low numbers $n$ of peptide sequences with the same parent sequence that we can never get significance with the Fisher's exact test.  The most extreme case is when all $n$ are significant.
+
+*Exercise 1: Find the lowest possible $p$-value you can obtain for different $n$.*
+
+```{r}
+K <- 1250
+N <- 10733
+n_max <- max(parent_df$n) # Maximal value of n in our data
+
+# Extreme case: k = n (all significant)
+dat_E1 <- matrix(0, nrow = 2, ncol = 2)
+
+for(n in round(exp(seq(1,log(n_max), length.out = 10)),0)){
+  k <- n
+  dat_E1 <- matrix(data = c(k,K-k,n-k,N_minus_K-(n-k)), nrow = 2, byrow = T)
+  print(c(n,fisher.test(dat_E1)$p.value))
+} 
+
+# General case: 
+
+n_max <- 10 #otherwise too many outputs
+for(n in round(exp(seq(1,log(n_max), length.out = 3)),0)){
+  for(k in c(1:n)){
+    dat_E1 <- matrix(data = c(k,K-k,n-k,N_minus_K-(n-k)), nrow = 2, byrow = T)
+  print(c(n,k, fisher.test(dat_E1)$p.value))
+  } 
+}
+
+
+```
+
+
+*CODE Exercise 1: What is the smallest $n$ that can give a significant result?*
+
+```{r}
+# smallest n implies that n = k -> decreases p-value
+
+Code_vec <- rep(NA,6)
+
+K <- 1250
+N <- 10733
+p_val <- 0
+n <- 1000
+
+while(p_val < 0.05){
+  n <- n-1
+  k <- n
+  dat_E2 <- matrix(data = c(k,K-k,n-k,N_minus_K-(n-k)), nrow = 2, byrow = T)
+  p_val <- fisher.test(dat_E2)$p.value
+} 
+
+(n_min <- n+1)
+Code_vec[1] <- n_min
+```
+
+We can avoid even running tests with $n$ below this minimum value so we later do not need to correct for so many tests. (Note that this *is* allowed since we do not look at the results or the statistic $k$, just at the marginals which are already fixed for Fisher's test.)
+
+*Exercise 2: Remove rows from `parent_df` with $n$ below the minimum value of CODE Exercise 1.*
+
+```{r}
+parent_df_truncated <- parent_df[parent_df$n >= n_min,]
+```
+
+
+*CODE Exercise 2: How many rows were removed?*
+
+```{r}
+Code_vec[2] <- nrow(parent_df) - nrow(parent_df_truncated)
+```
+
+
+## Loop of Fisher's tests
+
+Next we want to perform a Fisher's exact test on each `trueName` in our data frame.  For this we are going to write a function that takes in a data frame with a single row, and with columns `k`, `K_minus_k`, `n_minus_k`, `Nk_minus_nK` corresponding to the entries in the contingency table, performs the test and outputs the $p$-value.
+
+```{r}
+Fisher_test_fn <- function(df) {
+  a <- df$k
+  b <- df$K_minus_k
+  c <- df$n_minus_k
+  d <- df$Nk_minus_nK
+  test_mat <- matrix(c(a, b, c, d), nrow = 2, byrow = TRUE)
+  fisher.test(test_mat)$p.value
+}
+```
+
+*Exercise 3: Loop over all rows of `parent_df`, compute the $p$-values from the Fisher's test and append it as a new column.*
+
+```{r}
+parent_df$p_Fisher <- NA
+for(i in c(1:nrow(parent_df))){
+  parent_df[i, "p_Fisher"] <- Fisher_test_fn(parent_df[i,])
+}
+
+```
+
+*Exercise 4: Adjust the $p$-values with the BH correction and append as another column in `parent_df`.*
+
+```{r}
+parent_df$p_Fisher_BH <- p.adjust(parent_df$p_Fisher, method = "BH")
+```
+
+*CODE Exercise 3: How many parent sequences have significant adjusted $p$-values at the 5% level?*
+
+```{r}
+Code_vec[3] <- nrow(parent_df[parent_df$p_Fisher_BH <= 0.05,])+1
+```
+
+## Nesting
+
+The `tidyverse` way to avoid writing a loop is to *nest* the data after *grouping* it.  This stores each group as a data frame in a list as the second column:
+
+```{r}
+parent_df %>% group_by(trueName) %>% nest() %>% head(3)
+```
+
+We can now put the individual data frames into our `Fisher_test_fn` function with the `map` command.  At the same time we make a new column with `mutate`
+
+```{r}
+parent_df <- parent_df %>% group_by(trueName) %>% nest() %>%
+  mutate(fisher_ps = map(data, Fisher_test_fn)) %>%
+  unnest(c(data, fisher_ps)) %>% ungroup()
+```
+
+With the final commands above: `unnest` undoes the nesting and turns the list of data frames back into normal columns, while `ungroup` removes the grouping by `trueName`.  The *ungrouping* is needed if we want to apply a function to the column as a whole, otherwise if will be performed separately per group.
+
+We can look at the first few $p$-values
+
+```{r}
+parent_df %>% select(fisher_ps, trueName) %>% head(3)
+```
+
+*Exercise 5: Check that the $p$-values from nesting match those computed with a loop in Exercise 3.*
+
+```{r}
+table(parent_df$p_Fisher == parent_df$fisher_ps)
+```
+
+Another alternative if one just wants the $p$-values is with `do`
+
+```{r}
+parent_df %>% group_by(trueName) %>% do(fisher_ps = Fisher_test_fn(.)) %>% 
+  ungroup() %>% head()
+```
+
+which can also be used to store more general objects than just the numerical $p$-values.  Let's say our function returns the whole output from a Fisher's test
+
+```{r}
+Fisher_test_full <- function(df) {
+  a <- df$k
+  b <- df$K_minus_k
+  c <- df$n_minus_k
+  d <- df$Nk_minus_nK
+  test_mat <- matrix(c(a, b, c, d), nrow = 2, byrow = TRUE)
+  fisher.test(test_mat) # return the entire object
+}
+```
+
+We can store that in our processing and later extract information like the $p$-value from it:
+
+```{r}
+parent_df %>% group_by(trueName) %>% do(fisher_test = Fisher_test_full(.)) %>% 
+  mutate(fisher_ps = fisher_test$p.value) %>% 
+  select(fisher_test, fisher_ps, trueName) %>% head()
+
+```
+
+
+## Underrepresentation
+
+Philipp is particularly interested in parent sequences that have at least one significant child, but otherwise are underrepresented in the enrichment analysis. We focus for now on underrepresentation and will run an analysis using Fisher's test, but only one-sided for underenrichment.
+
+*Exercise 6: Compute the lowest possible $p$-value you can obtain for different $n$ for a one-sided Fisher's exact test.*
+
+```{r}
+
+K <- 1250
+N <- 10733
+n_max <- max(parent_df$n) # Maximal value of n in our data
+
+# Extreme case: k = n (all significant)
+dat_E6 <- matrix(0, nrow = 2, ncol = 2)
+
+for(n in round(exp(seq(1,log(n_max), length.out = 10)),0)){
+  k <- n
+  dat_E6 <- matrix(data = c(k,K-k,n-k,N_minus_K-(n-k)), nrow = 2, byrow = T)
+  print(c(n,fisher.test(dat_E6, alternative = "l")$p.value))
+} 
+
+# General case: 
+
+n_max <- 10 #otherwise too many outputs
+for(n in round(exp(seq(1,log(n_max), length.out = 3)),0)){
+  for(k in c(1:n)){
+    dat_E6 <- matrix(data = c(k,K-k,n-k,N_minus_K-(n-k)), nrow = 2, byrow = T)
+  print(c(n,k, fisher.test(dat_E6, alternative = "l")$p.value))
+  } 
+}
+
+
+```
+
+*CODE Exercise 4: What is the smallest $n$ that can give a significant result?*
+
+```{r}
+
+K <- 1250
+N <- 10733
+p_val <- 1
+n <- 1
+
+while(p_val > 0.05){
+  n <- n+1
+  k <- 0
+  dat_E2 <- matrix(data = c(k,K-k,n-k,N_minus_K-(n-k)), nrow = 2, byrow = T)
+  (p_val <- fisher.test(dat_E2, alternative = "l")$p.value)
+} 
+
+(n_min_4 <- n)
+Code_vec[4] <- n_min_4
+```
+
+*Exercise 7: Filter the data to only keep rows with at least the minimum $n$ from CODE Exercise 4.*
+
+```{r}
+parent_df_truncated_7 <- parent_df[parent_df$n >= n_min_4,]
+```
+
+*Exercise 8: Perform a one-sided Fisher's exact test on the remaining rows in your data frame from Exercise 7, and adjust the $p$-values with the BH correction.*
+
+```{r}
+
+Fisher_test_fn_os <- function(df) {
+  a <- df$k
+  b <- df$K_minus_k
+  c <- df$n_minus_k
+  d <- df$Nk_minus_nK
+  test_mat <- matrix(c(a, b, c, d), nrow = 2, byrow = TRUE)
+  fisher.test(test_mat, alternative = "l")$p.value
+}
+
+parent_df_truncated_7$p_os_F <- NA
+
+for(i in c(1:nrow(parent_df_truncated_7))){
+  parent_df_truncated_7[i, "p_os_F"] <- Fisher_test_fn_os(parent_df_truncated_7[i,])
+}
+
+parent_df_truncated_7$p_os_F_BH <- p.adjust(parent_df_truncated_7$p_os_F, method = "BH")
+
+
+```
+
+*CODE Exercise 5: How many parent sequences from Exercise 8 have significant adjusted $p$-values at the 5% level when we only consider underrepresentation?*
+
+```{r}
+Code_vec[5] <- nrow(parent_df_truncated_7[parent_df_truncated_7$p_os_F_BH < 0.05,])
+```
+
+Finally we want to examine those significant results which, while being underrepresented, have at least one signficantly differentially expressed child.
+
+*Exercise 9: How many parent sequences from Exercise 8 have significant adjusted $p$-values at the 5% level when we only consider underrepresentation **and** have at least one significant child?*
+
+
+## Take care
+
+Now the analysis above has a subtle flaw.  We have performed the FDR correction of the $p$-values including the case when $k=0$ and then removed it afterwards.  However those cases with $k=0$ are likely to have **lower** $p$-values and count more towards the "true effects" when controlling the FDR.
+
+If we want to look for parent sequences that have at least one significant child, but otherwise are underrepresented in the enrichment analysis, we should target that directly.
+
+*Exercise 10: Compute the lowest possible $p$-value you can obtain for different $n$ for a one-sided Fisher's exact test, when $k$ is at least 1. Find the smallest $n$ that can give a significant result.*
+
+```{r}
+
+K <- 1250
+N <- 10733
+Stop_var <- FALSE
+dat_E10 <- matrix(0, nrow = 2, ncol = 2)
+
+for(n in 1:100){
+  for(k in c(1:n)){
+    dat_E10 <- matrix(data = c(k,K-k,n-k,N_minus_K-(n-k)), nrow = 2, byrow = T)
+    p_val <- fisher.test(dat_E10, alternative = "l")$p.value
+    
+    if(p_val < 0.05 & k > 0){
+      print(n)
+      Stop_var <- TRUE
+      break
+    }
+  }
+if(Stop_var){break}
+} 
+
+n_min_10 <- n
+
+```
+
+*Exercise 11: Filter the data to only keep rows with at least one significant child peptide $k>0$ and at least the minimum $n$ from Exercise 10. Perform a one-sided Fisher's exact test on the remaining rows in your data frame, and adjust the $p$-values with the BH correction.*
+
+```{r}
+parent_df_truncated_11 <- parent_df[parent_df$n >= n_min_10 & parent_df$k > 0,]
+
+parent_df_truncated_11$p_os_F <- NA
+
+for(i in c(1:nrow(parent_df_truncated_11))){
+  parent_df_truncated_11[i, "p_os_F"] <- Fisher_test_fn_os(parent_df_truncated_11[i,])
+}
+
+parent_df_truncated_11$p_os_F_BH <- p.adjust(parent_df_truncated_11$p_os_F, method = "BH")
+
+```
+
+*CODE Exercise 6: How many parent sequences, with at least 1 significant child, from Exercise 11 have significant adjusted $p$-values at the 5% level when we only consider underrepresentation?*
+
+```{r}
+
+table(parent_df_truncated_11$p_os_F_BH < 0.05)
+# -> No entries for TRUE
+Code_vec[6] <- 0
+
+```
+
+
+## Getting there
+
+The analysis still has a flaw since we have filtered based on the statistic $k$ being at least 1.  Using the statistic that influences the $p$-value introduces feedback in our analysis and affects the $p$-value calibration.  Basically the null distribution would include $k$ being 0, which we have artificially removed.  To correct for this we would need to condition the null on $k > 0$, and essentially remove the case $k=0$ from our probability space.  
+
+If we define $p_0 = P(k=0 \mid n, K, N)$ as the probability of that contingency table, we need to remove it from the tail and adjust our $p$-values according to
+
+$$p \to \frac{p - p_0}{1-p_0}$$
+
+*Exercise 12: Correct the $p$-values from Exercise 11 according to the formula above, and rerun the BH correction.*
+
+
+## CODE concatenation
+
+*FINAL CODEWORD: Combine your answers to CODE Exercises `c(1:6)` into a single string with underscores separating the individual answers. Upload this codeword, without speech marks.*
+
+```{r}
+paste(as.character(Code_vec), collapse="_") # Code copied from exercise 1
+```
+
