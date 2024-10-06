@@ -1,0 +1,442 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: '1: Programming - vectors, functions and loops'
+author: "Luca Witte"
+date: "29 September 2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 3, fig.width = 6)
+```
+
+Read and work through this document, completing the exercises on the way. Certain exercises will combine to provide a codeword. Check and submit your codeword at `cbg.bsse.ethz.ch/isar`. Also send the codeword, along with the accompanying `Rmarkdown` file named `isar_programming_01-lastname_firstname.Rmd` to: isar-teaching.cbg@bsse.ethz.ch. In case of any questions, please feel free to contact us per e-mail or on Piazza.
+
+**Submissions are due 5 October 2022, 23:59.**
+
+## Vectors
+
+`R` is very useful when we work with *vectors*, or sequences of numbers. An empty vector can be built with the `rep` command
+
+```{r}
+x <- rep(0, 6)
+x
+```
+
+while a simple sequence can be created using a colon
+
+```{r}
+y <- 1:6
+y
+```
+
+and a more complicated one with `seq`
+
+```{r}
+y <- seq(from = 1, to = 2, by = 0.2)
+y
+```
+
+To see how this function works, and what the arguments mean, you can type `?seq` into the console and the documentation appears in the **Help** pane. Likewise typing a `?` before any `R` function will call up its documentation.
+
+We can also define a vector by hand using the `c` (combine) function
+
+```{r}
+x <- c(3, 5, 9, 7, 4, 2)
+x
+```
+
+As a side note, we can place both (or more!) of those commands on the same line with a semicolon `;` separating them
+
+```{r}
+x <- c(3, 5, 9, 7, 4, 2); x
+```
+
+or even assign and display in one line by encapsulating the command in parenthesis`()`
+
+```{r}
+(x <- c(3, 5, 9, 7, 4, 2)) # equivalent to the previous two versions
+```
+
+The `c` function can combine any comma separated list of vectors and numbers
+
+```{r}
+c(x, 12:15, 99, y)
+```
+
+
+## Vectorised functions
+
+If we apply a mathematical function to a vector, it will be applied elementwise to all elements of the vector at once
+
+```{r}
+x^2
+log(x)
+```
+
+including if we add a scalar or multiply by one
+
+```{r}
+x + 1
+4*x
+```
+
+Or functions can be applied elementwise to two vectors
+
+```{r}
+x + y
+x*y
+```
+
+Some functions act on the whole vector to return a single number
+
+```{r}
+sum(x) # add elements
+mean(y) # compute their mean
+sd(x) # compute the standard deviation
+var(y) # compute the variance
+min(x) # find the minimum value
+max(y) # find the maximum value
+```
+
+*CODE Exercise 1: Compute the sum of the numbers from 1 to your personal seed number.*
+
+```{r}
+seed <- 51628
+Code <- rep(NA, 6)
+
+(Code[1] <- sum(1:seed))
+```
+
+
+*CODE Exercise 2: Compute the sum of the positive odd numbers below your personal seed number.*
+
+```{r}
+odd_vec <- seq(1,seed-1, 2) # "-1" to make sure number is below even for odd seeds
+
+(Code[2] <- sum(odd_vec))
+```
+
+*Exercise 1: Create a vector from 0 to 100 of degrees Fahrenheit.  Convert those temperatures to degrees Celsius.*
+
+```{r}
+vec_F <- c(1:100)
+(vec_c <- (vec_F - 32) * (5/9))
+# Calculation according to: https://www.almanac.com/temperature-conversion-celsius-fahrenheit (accessed: 30.09.22)
+
+```
+
+## Functions
+
+Along with the built in functions of `R` we can define our own.  Have a look at the following which includes an `if` statement
+
+```{r}
+Fuzzy <- function(x) {
+  if(x%%3 == 0){ # modular arithmetic
+    y <- "fuzzy"
+  } else {
+    y <- x
+  }
+  return(y)
+}
+```
+
+*Exercise 2: Look at the function for different inputs, and work out what it does.*
+*Answer:* Function checks if the input ("x") is divisible by 3 without remainder. If that is the case, it returns the string "fuzzy". If the input "x" is not divisible by 3 without remainder, it returns the input value. 
+
+To help, we can apply a function that takes a scalar as an argument to a vector of values using `sapply` 
+
+```{r}
+sapply(1:3, Fuzzy)
+```
+
+*Exercise 3: Write a function `FuzzyDuck` that along with the behaviour of `Fuzzy` also replaces multiples of 5 by "duck", and multiples of 3 and 5 with "fuzzy duck".*  
+
+```{r}
+# Approach 1: nested loops (messy)
+FuzzyDuck <- function(x) {
+  if(x%%3 == 0){
+      if(x%%5 == 0){
+        y <- "fuzzy duck"
+      }
+      else{
+        y <- "fuzzy"
+      }
+  } else if(x%%5 == 0){
+    y <- "duck"
+  } else {
+    y <- x
+  }
+  return(y)
+}
+
+# Approach 2: each condition checked separately (looks cleaner)
+
+FuzzyDuck2 <- function(x) {
+  if(x%%3 == 0 & x%%5 == 0){ 
+    y <- "fuzzy duck"
+  } else if(x%%3 == 0 &!x%%5 == 0){
+    y <- "fuzzy"
+  } else if(x%%5 == 0 &!x%%3 == 0){
+    y <- "duck"
+  } else {
+    y <- x
+  }
+  return(y)
+}
+
+sapply(c(1,3,5,6,7,15,30000000), FuzzyDuck)
+sapply(c(1,3,5,6,7,15,30000000), FuzzyDuck2)
+
+```
+
+
+The next function we will use to extract the digit in the first decimal place from numbers to later help build our code numbers.
+
+```{r}
+ExtractFirstDecimalPlace <- function(x) {
+  x <- abs(x) # take the absolute value to work with negative numbers
+  floor(10*(x - floor(x)))
+}
+```
+
+We check that it works
+
+```{r}
+sqrt(x)
+ExtractFirstDecimalPlace(sqrt(x))
+```
+
+*Exercise 4: Write a function, with a second argument, the extracts the digit in the n-th decimal place.*
+
+```{r}
+ExtractDecimalPlace <- function(x, n) {
+  x <- abs(x)
+  floor(10*(x*10^(n-1) - floor(x*10^(n-1))))
+}
+
+sqrt(x)
+ExtractDecimalPlace(sqrt(x), 1)
+ExtractDecimalPlace(sqrt(x), 2)
+ExtractDecimalPlace(sqrt(x), 3)
+ExtractDecimalPlace(sqrt(x), 4)
+
+```
+
+**Note:** Because of how `R` stores numbers internally (in binary) extracting the last digit of a decimal number can give the "wrong" result!
+
+## Random samples
+
+One type of vector we'll use a lot in simulations are random samples from a given distribution.  For reproducibility we will use a seed each time we do this.  We use the number 42, you should use your assigned seed.
+
+```{r}
+#seed <- 51628 done earlier
+set.seed(seed)
+```
+
+For example we can sample from a Gaussian using `rnorm`
+
+```{r}
+z <- rnorm(n = 40, mean = 0, sd = 1)
+length(z) # check we have 40 elements in z
+```
+
+And we can examine the first few elements with `[]`
+
+```{r}
+z[1:6]
+```
+
+*CODE Exercise 3: What is the digit in the third decimal place of the sum of elements 11 to 20 of your sample?*
+
+```{r}
+sample_subset <- z[11:20]
+(sample_subset_sum <- sum(sample_subset))
+
+(Code[3] <- ExtractDecimalPlace(sample_subset_sum,3))
+```
+
+
+We can see if elements are positive
+
+```{r}
+z > 0
+```
+
+and display them as binary by multiplying by 1
+
+```{r}
+1*(z > 0)
+```
+
+and we can see which are the positive elements with `which`
+
+```{r}
+which(z > 0)
+```
+
+And create a new vector of only the positive samples
+
+```{r}
+z_pos <- z[which(z > 0)]
+```
+
+*CODE Exercise 4: What is the digit in the third decimal place of the mean of the positive numbers in your sample?*
+
+```{r}
+(mean_zp <- mean(z_pos))
+
+(Code[4] <- ExtractDecimalPlace(mean_zp,3))
+```
+
+
+We saw before how to compute the `max` or `min` of a vector.  To find which element they correspond to, there are the following useful functions 
+
+```{r}
+which.max(z)
+which.min(z)
+min(z) == z[which.min(z)] # check it is minimal
+```
+
+And to see which elements are in a set, we can use `%in%`
+
+```{r}
+which(x %in% c(1:4)) # this gives positions in vector
+x[which(x %in% c(1:4))] # this indexes the extracted positions in the vector!
+# let's check against x
+x
+```
+
+## Loops
+
+We can explicitly program loops in `R` using the `for` syntax.  Before that we will define the number of repetitions in our loop and a vector to store the results of each repetition
+
+```{r}
+n_reps <- 1000 # number of repetitions
+sample_means <- rep(NA, n_reps) # to store the sampled means
+```
+
+In our loop, for each repetition we will draw 40 samples from a standard normal distribution, and compute their sample mean.  This value we will store as an element of the `sample_means` vector
+
+```{r}
+set.seed(seed) # reset the seed
+for (ii in 1:n_reps) { # the loop variable
+  z <- rnorm(40) # sample from a normal
+  sample_means[ii] <- mean(z) # the sample mean stored in the position indexed by ii
+} 
+```
+
+Although the true mean is 0, the sample mean is a random variable
+
+```{r}
+sample_means[1:6] 
+```
+
+with an expected value for the mean of 0
+
+```{r}
+mean(sample_means)
+```
+
+*Exercise 5: What should the standard deviation of the sample means be?  Hint, think of the central limit theorem.  Compare the theoretical value to the standard deviation of the value of the sample mean over all repetitions.* \newline
+The standard deviation of the sample mean is referred to as standard error ($s_m$).
+It can be derived from the sample standard deviation ($s$):
+$$s_m = s / sqrt(N)$$ 
+
+```{r}
+s <- 1 # defined above
+n = 40 # defined above
+(SEM_theoretical <- s/sqrt(n))
+(SEM_sample <- sd(sample_means))
+  
+
+```
+
+
+*CODE Exercise 5: Repeat the process above (resetting the seed), but only keep the positive samples at each iteration and compute their sample mean.  What is the digit in the third decimal place of the mean of all `n_reps` sample means?*
+
+```{r}
+set.seed(seed)
+n_reps <- 1000 
+sample_means <- rep(NA, n_reps)
+
+for (ii in 1:n_reps) {
+  z <- rnorm(40)
+  z_pos <- z[which(z > 0)] 
+  sample_means[ii] <- mean(z_pos) 
+} 
+(z_out <- mean(sample_means))
+
+(Code[5] <- ExtractDecimalPlace(z_out,3))
+
+```
+
+*CODE Exercise 6: And what is the digit in the third decimal place of the standard deviation of the sample means from CODE Exercise 5?*
+
+```{r}
+(z_sd <- sd(sample_means))
+
+(Code[6] <- ExtractDecimalPlace(z_sd,3))
+```
+
+
+## Basic Plots
+
+We can also embed `R`-generated plots in the document, for example if we define two vectors `x` and `y`
+
+```{r}
+x <- 1:10
+y <- log(x)
+```
+
+we can plot as follows:
+
+```{r}
+plot(x, y)
+```
+
+Now the default in `R` is rather ugly, so we will change the margins, colours and plotting style
+
+```{r}
+par(mar = c(3.1, 3.1, 0.1, 0.1)) # change margins
+par(mgp = c(2.25, 0.75, 0)) # change axes label placement
+plot(x, y, type="o", col="dodgerblue", pch=19) # plot the line and points with "o"
+```
+
+We can add further lines to the plot with the `lines` command
+
+```{r}
+z <- sqrt(x) # define another vector
+par(mar = c(3.1, 3.1, 0.1, 0.1)) # change margins
+par(mgp = c(2.25, 0.75, 0)) # change axes label placement
+plot(x, y, type="o", col="dodgerblue", pch=19, ylim=c(0,3))
+# add a dotted line
+lines(x, z, type="l", lty=3, col="darkorange")
+# and some text at x=5
+text(x[5], y[5], "y")
+text(x[5], z[5], "z")
+```
+
+
+## CODE concatenation
+
+We can concatenate strings with the `paste` command, and turn integers into characters by chaging their type with `as.character`
+
+```{r}
+paste(as.character(x), collapse="_")
+```
+
+where we used an underscore `_` to separate the digits.
+
+*FINAL CODEWORD: Combine your answers to CODE Exercises `c(1:6)` into a single string with underscores separating the individual answers. Upload this codeword, without speech marks.*
+
+```{r}
+paste(as.character(Code), collapse="_")
+```
+
+
+
+
