@@ -1,0 +1,477 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: '4: Programming - matrices and lists'
+author: "Luca Witte"
+date: "20 October 2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, fig.height = 3, fig.width = 6)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse) # load for the functions used later
+seed_number <- 51628 # remember to use your personal seed
+```
+
+## Vector recycling
+
+Before we've seen that multiplying a vector by a scalar multiplies all the elements and multiplying two equal sized vectors act element wise
+
+```{r}
+3*(1:5)
+(1:4)*(3:6)
+```
+
+If instead we use vectors of different length, `R` will *recycle* the shorter by going back to its first element and starting again.
+
+```{r}
+(1:10)*(3:5)
+```
+
+Note that `R` warned us here about the recycling, but if the length of the shorter divides the length of the longer vector, `R` does not even warn about doing this!
+
+```{r}
+(1:10)/(3:4)
+```
+
+*Exercise 1: Make sure you understand how `R` is computing these results.*
+
+
+## Sampling permutations and integers
+
+We've used `R` to sample from distributions, but the `sample` functions allows us to sample from a set
+
+```{r}
+set.seed(seed_number)
+sample(5:9)
+```
+
+By default, `R` samples from the set without replacement (so each element can only be sampled once) and samples the full set size, essentially giving a random permutation of the original set.
+
+*CODE Exercise 1: Sample 20 times a number from 1 to 10, and compute the sum of your sample (remember to set your seed)*
+
+```{r}
+set.seed(seed_number)
+Code_vec <- rep(NA, 6)
+
+sample(1:10,20, replace = TRUE) %>% sum -> Code_vec[1]
+```
+
+**WARNING**: `R` changed the coding of `sample` when moving to version 3.6 - make sure your version is updated (you can check with `R.version`) to get the right CODE!
+
+**WARNING**: You may also see different numbers locally compared to when you `knit` this document.  Take those from the `knitted` document if they differ.  The desired sampling can also be enforced with an additional argument to `set.seed`:
+
+```{r}
+set.seed(seed_number, sample.kind = "Rejection")
+```
+
+If you want to sample from a set of size 1, the behaviour of `R` might be unexpected
+
+```{r}
+set.seed(seed_number)
+sample(c(10), 1)
+```
+
+This is because `R` assumes that you wouldn't really want to sample from a vector of length 1 (since we already know which element will be sampled), so instead it runs the `sample.int` function, which samples a positive integer up to (and including) the first argument (or its integer part)
+
+```{r}
+set.seed(seed_number)
+sample.int(10, 1) # this is what R actually does with sample(c(10), 1)
+```
+
+This gives us several ways to sample binary vectors
+
+```{r}
+s_size <- 10 # sample size
+set.seed(seed_number)
+sample(c(0,1), s_size, replace = TRUE)
+set.seed(seed_number)
+sample.int(2, s_size, replace = TRUE) - 1
+set.seed(seed_number)
+rbinom(s_size, 1, 0.5)
+```
+
+The first two give the same results since they are actually using the same subroutines, while the binomial sample uses different underlying code leading to different samples.
+
+
+## Matrices
+
+Along with **vectors** `R` also includes **matrices** as objects, which we can define as follows
+
+```{r}
+(first_mat <- matrix(1:24, nrow = 4))
+```
+
+By default the `matrix` function fills the matrix **columnwise**.  If we multiply a matrix and a vector with `*` then `R` performs this **columnwise** and **elementwise**
+
+```{r}
+first_mat*1:4 # the same if we swap the order to 1:4*first_mat
+```
+
+*Exercise 2: What happens if you multiply `first_mat` by 1:6?*
+
+```{r}
+first_mat*1:6
+```
+Columnwise multiplication continues after last row:
+-> Element 1 of column 2 is multiplied by 5
+-> 1:6 repeats after 6 elements 
+  -> Element 3 of column 2 is multiplied by 1.
+
+*CODE Exercise 2: What is the sum of the elements of the product from Exercise 2?*
+
+```{r}
+Code_vec[2] <- sum(first_mat*1:6)
+```
+
+
+Note that if we perform functions on the matrix, these will often be evaluated as if the matrix was just a vector of the elements
+
+```{r}
+sum(first_mat)
+mean(first_mat)
+max(first_mat)
+```
+
+
+## Row and column functions
+
+If instead we want to compute statistics row or columnwise (as we often do for a matrix), some inbuilt functions include
+
+```{r}
+rowSums(first_mat)
+colMeans(first_mat)
+```
+
+If we want to evaluate a different function along the elements, we can use the `apply` function, whose second argument `MARGIN` is given the value `1` to evaluate rowwise, and the value `2` to evaluate columnwise
+
+```{r}
+apply(first_mat, 1, sum) # same as rowSums(first_mat)
+apply(first_mat, 2, mean) # same as colMeans(first_mat)
+```
+
+and we can place any named function as the last argument, and even include our own functions
+
+```{r}
+apply(first_mat, 1, function(x) sum(x^2)) # rowwise sum of squares
+apply(first_mat, 2, function(x) min(sqrt(x))) # columnwise minimum sqrt
+```
+
+Often we might want to centre a data matrix.  Let's say we want to set the mean of each row to 0:
+
+```{r}
+row_means <- rowMeans(first_mat)
+first_mat - row_means
+```
+
+Since `R` subtracts columnwise, this works well.  Say we want to set the mean of each column to 0 instead, it is best to **transpose** the matrix with `t`, subtract and **transpose** back
+
+```{r}
+col_means <- colMeans(first_mat)
+t(t(first_mat) - col_means) # or first_mat %>% t %>% {. - col_means} %>% t
+```
+
+There is also an inbuilt `R` function `sweep` that does this
+
+```{r}
+sweep(first_mat, 1, row_means)
+sweep(first_mat, 2, col_means)
+```
+
+While to standardise data (setting the mean to 0 [by subtracting] and setting the sd to 1 [by dividing]) there is the `scale` command which works **columnwise**
+
+```{r}
+scale(first_mat)
+```
+
+*Exercise 3: Use pipes to recreate this function*
+
+```{r}
+col_means <- colMeans(first_mat)
+col_sds <- apply(first_mat, 2, sd)
+
+t((t(first_mat) - col_means)/col_sds)
+
+first_mat %>% t %>% {.-colMeans(first_mat)} %>% {./apply(first_mat, 2, sd)} %>% t
+```
+
+
+*CODE Exercise 3: Rescale the matrix rowwise and compute the sum of the square of all matrix elements.*
+
+```{r}
+row_means <- rowMeans(first_mat)
+row_sds <- apply(first_mat, 1, sd)
+
+(((first_mat) - row_means)/row_sds)^2 %>% {sum(.)} -> Code_vec[3]
+
+```
+
+
+## Matrix multiplication
+
+To perform **real** matrix multiplication, we need to use `%*%` (not to be confused with the similar-looking **piping** operator `%>%`)
+
+```{r}
+first_mat %*% 6:1 # here the vector is interpreted as a column vector
+4:1 %*% first_mat # here the vector is interpreted as a row vector
+```
+
+Notice how the results are still matrices, but this is not the case if we extract a row or column from a matrix.
+
+```{r}
+first_mat[, 4]
+```
+
+And converting a vector to a matrix makes a column matrix
+
+```{r}
+as.matrix(first_mat[3, ])
+```
+
+Be careful with this! Compare the following
+
+```{r}
+1:4 %*% first_mat[, 4] # extracted as a vector
+1:4 %*% as.matrix(first_mat[, 4]) # as a matrix column
+1:4 %*% t(as.matrix(first_mat[, 4])) # turn to matrix row
+1:4 %*% t(first_mat[, 4]) # transpose the vector - it is now a row vector!
+1:4 %*% t(t(first_mat[, 4])) # transpose twice to column!
+```
+
+By default `R` will treat standard vectors either as column or row vectors to make the matrix multiplication match!  In general, be careful that vectors aren't transposed in ways you didn't intend.
+
+One way to avoid these kinds of problems is to enforce that `R` doesn't turn rows or columns into vectors, but keeps them as matrices, with the `drop = FALSE` argument:
+
+```{r}
+first_mat[, 4, drop = FALSE]
+first_mat[3, , drop = FALSE]
+```
+
+*CODE Exercise 4: Set your seed and in this order sample (using `sample`) a binary vector of length 10, a binary matrix of size $10\times 6$, a second binary matrix of size $6\times 8$ and a second binary vector of length 8.  What is their matrix product?*
+
+```{r}
+set.seed(seed_number)
+vec_1 <- sample(c(0,1),10,replace = TRUE)
+mat_2 <- matrix(sample(c(0,1),6*10,replace = TRUE), nrow = 10)
+mat_3 <- matrix(sample(c(0,1),6*8,replace = TRUE), nrow = 6)
+vec_4 <- sample(c(0,1),8,replace = TRUE)
+
+Code_vec[4] <- vec_1 %*% mat_2 %*% mat_3 %*% vec_4 
+
+```
+
+
+
+## Recursive functions
+
+Functions can call themselves.  Have a look at the following way of computing factorials
+
+```{r}
+recursive_factorial <- function(n) {
+  if (is.integer(n) && n > 0) { # only compute for positive integers
+    if (n > 2) {
+      local_output <- n*recursive_factorial(n - 1L) # the L is to make it an integer
+    } else {
+      local_output <- n
+    }
+  } else { # if not an integer or negative
+    local_output <- NA
+  }
+  return(local_output)
+}
+```
+
+Here we have defined the function only for postive integers, and return `NA` otherwise.  If we try running it on 5 we notice a problem
+
+```{r}
+recursive_factorial(5)
+```
+
+This is because `R` does not treat `5` as an integer, but just as a numeric value (which happens to have an integer value).  We can recast it as an integer, or put an `L` afterwards to tell `R` it really is an integer
+
+```{r}
+recursive_factorial(as.integer(5))
+recursive_factorial(5L)
+```
+
+In scientific programming you **never** want to use the factorial function, instead we should always evaluate its logarithm for numerical precision.
+
+*Exercise 5: Write a recursive function to return the logarithm of a factorial*
+
+```{r}
+# Adapt above function
+# Logspace: addition instead of multiplication
+recursive_factorial_log <- function(n) {
+  if (is.integer(n) && n > 0) { # only compute for positive integers
+    if (n > 2) {
+      local_output <- log(n) + recursive_factorial_log(n - 1L) # the L is to make it an integer
+    } else {
+      local_output <- log(n)
+    }
+  } else { # if not an integer or negative
+    local_output <- NA
+  }
+  return(local_output)
+}
+
+# Check whether it works with value from above
+exp(recursive_factorial_log(5L))
+
+```
+
+*CODE Exercise 5: What is the digit in the first decimal place of the logarithm of 1000 factorial?*
+
+```{r}
+# Function from exercise 1:
+ExtractDecimalPlace <- function(x, n) {
+  x <- abs(x)
+  floor(10*(x*10^(n-1) - floor(x*10^(n-1))))
+}
+
+recursive_factorial_log(1000L) %>% {ExtractDecimalPlace(.,1)} -> Code_vec[5]
+
+```
+
+Numerically, the best way to evaluate `log(factorial(n))` is with `lgamma(n + 1)`.
+
+*Exercise 6: Check you get the same answer to CODE Exercise 5 using `lgamma`.*
+
+```{r}
+
+recursive_factorial_log(1000L) - lgamma(1000+1) # minimal difference
+round(lgamma(1000+1), digits = 5) == round(recursive_factorial_log(1000L), digits = 5)
+
+```
+
+
+## Permanents
+
+A **permanent** of a square matrix can be computed in a Laplace expansion
+
+$$\mathbb{P}(A) = \sum_i A[i,j] \mathbb{P}(A[-i,-j])$$
+
+by going through any column $j$ and multipling each element by the permanent of the submatrix formed by deleting the row and column of that element.  The result does not depend on the column chosen (so we can simply pick the first and set $j=1$), and we could also expand along rows instead (and correspondingly change the equation above to sum over $j$ and not $i$).  The permanent is like the determinant, but with no minus signs and only adding.  Unlike the determinant, computing the permanent is NP-hard!
+
+*Exercise 7: Write a recursive function to compute the permanent of a square matrix. (The permanent of a $1\times 1$ matrix is the element itself.)*
+
+```{r}
+out = 0
+perman <- function(A){
+  if (nrow(A) != ncol(A)){
+    print("Not a square matrix")
+  } 
+  for (j in c(1:nrow(A))){
+    submat = A[-1, -j]
+    if (length(submat) == 1){
+    temp = submat
+    } else {
+    temp = perman(submat)
+  }
+    out = out + temp * A[1,j]
+  }
+  return(out)
+}
+```
+
+
+*CODE Exercise 6: Set your seed and sample a $8\times 8$ binary matrix.  Compute its permanent.*
+
+```{r}
+
+set.seed(seed_number)
+mat_6 <- matrix(sample(c(0,1),8*8,replace = TRUE), nrow = 8)
+Code_vec[6] <- perman(mat_6)
+```
+
+## Lists
+
+Another common `R` object are **lists**.  They are more general than data frames in that each component can have different lengths and different types.  
+
+```{r}
+study <- list(            # here <-
+  name = "Bob",           # but here only =
+  age = 44,               # never <-
+  children = c( "Amy", "Dan", "Eve" )
+)
+study
+```
+
+The length is the number of separate components
+
+```{r}
+length(study)
+```
+
+And we can access the components with `$` or `[[]]`
+
+```{r}
+study$name
+study[["age"]]
+study[[3]]
+```
+
+Lists are useful for returning several variables from a function
+
+```{r}
+mean_and_sd <- function(x){
+  list(mean = mean(x), sd = sd(x))
+}
+set.seed(seed_number)
+mean_and_sd(rnorm(10))
+```
+
+
+## Plot in loops
+
+But here we will use them to store a series of plots.  Let's make a simple data frame of different functions
+
+```{r}
+x <- seq(1, 10, by = 0.1)
+fns_df <- data.frame(x = x, 
+                     log = log(x), 
+                     sqrt = sqrt(x), 
+                     sin = sin(x))
+```
+
+One neat feature of `ggplot` is that we can use **dynamic** variable names in the plotting by telling the `aes` aesthetics to expect strings with `aes_string`. We also need to make sure that non-dynamic variable names are quoted to make them strings. With this we are going to create a plot for each function using a loop, and store the result in a list
+
+```{r}
+y_variables <- colnames(fns_df)[-1]
+colours <- c("dodgerblue", "firebrick3", "darkorchid4")
+
+plots <- list()
+for (ii in 1:length(y_variables)) {
+  plots[[ii]] <- ggplot(fns_df, aes_string(x = "x", y = y_variables[ii])) +
+    geom_line(colour = colours[ii], alpha = 0.33, size = 0.75) +
+    geom_line(colour = colours[ii], alpha = 0.33, size = 1.50) + # use transparency
+    geom_line(colour = colours[ii], alpha = 0.33, size = 2.25) + # for shading
+    theme_minimal(base_size = 12) + ylab(paste0(y_variables[ii], "(x)")) + 
+    ggtitle(y_variables[ii])
+}
+```
+
+*Exercise 8: Make sure you understand the code above.*
+
+Then we can display the plots in a row
+
+```{r, warning=FALSE, message=FALSE}
+library(cowplot)
+cowplot::plot_grid(plotlist = plots, ncol = length(y_variables), align = "h")
+```
+
+
+## CODE concatenation
+
+*FINAL CODEWORD: Combine your answers to CODE Exercises `c(1:6)` into a single string with underscores separating the individual answers. Upload this codeword, without speech marks.*
+
+```{r}
+paste(as.character(Code_vec), collapse="_") # Code copied from exercise 1
+
+```
+
