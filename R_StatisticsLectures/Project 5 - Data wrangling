@@ -1,0 +1,473 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: '5: Programming - data reshaping'
+author: "Luca Witte"
+date: "27 October 2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, fig.height = 3, fig.width = 6)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse) # load for the functions used later
+seed_number <- 51628 # remember to use your personal seed
+```
+
+
+## Data shapes
+
+Data frames or tables come in two main varieties: **wide** where each row is an observation, and **long** where each column is a separate variable.  Here we'll be looking at these two types, and how to transform from one to the other.
+
+
+## Building a wide data frame
+
+To start our data frame we will give each row an `id` and sample random `age` for each
+
+```{r}
+set.seed(seed_number) # we'll set just once for this data frame
+n_obs <- 100 # number of observations
+wide_df <- data.frame(id = 1:n_obs, sex = sample(c("M", "F"), n_obs, replace = TRUE),
+                      age = sample.int(30, n_obs, replace = TRUE) + 20)
+head(wide_df)
+```
+
+Now we are going to make up some incomes for various years
+
+```{r}
+# we do not reset the seed here
+n_years <- 10 # number of years
+for (ii in 1:n_years) {
+  wide_df <- mutate(wide_df, !!paste0("income_", 2000 + ii) := 
+                       round(age + sin(id/20) + ii + rnorm(n_obs), 3))
+}
+```
+
+Note that the `!!` and `:=` syntax allows `mutate` to use a *dynamic* variable (one stored as a string) on the left of the assign. Also `paste0` is a shorthand version of `paste` where the separator is set to `sep = ""`. 
+
+*Exercise 1: Examine the data and make sure you understand what `R` has done above.*
+
+
+## Wide to long
+
+To turn our `wide_df` into a `long_df` we want to turn each `income` column (one for each year), into a single column.  This would mean that each row would become `r n_years` rows.  To distinguish them, we would add a new column containing the year itself. To perform this operation, we can use the `pivot_longer` command and tell it which columns we want pivoted into a longer format and combined into one column. (**Note**: this used to be done with the `gather` command.)
+
+```{r}
+long_df <- pivot_longer(data = wide_df, cols = paste0("income_", 2000 + 1:n_years))
+```
+
+From the above code, we can explore the output
+
+```{r}
+wide_df[1, 1:6]
+dim(long_df)
+long_df %>% head()
+```
+
+In the example above, the first row in `wide_df` has become `r n_years` rows in `long_df`, with each representing a different year.  The columns which were not pivoted are simply repeated in each row.
+
+By default the old column names are in the new `name` column, whereas we would quite like the year itself. One function to extract just the year is `separate`, whose syntax is fairly natural (as long as we remember that `col` here is short for *column* not *colour*).
+
+```{r}
+long_df <- separate(data = long_df, col = name, into = c("inc", "year"), sep = "_")
+head(long_df)
+```
+
+However, one neat feature of `pivot_longer` is that we can directly tell it to separate that column on the underscore with the `names_sep` argument, as long as we also tell `pivot_longer` the names we want for the new columns with `names_to` argument:
+
+```{r}
+long_df_better <- pivot_longer(data = wide_df, cols = paste0("income_", 2000 + 1:n_years),
+                        names_to = c("inc", "year"), names_sep = "_")
+long_df_better %>% head()
+```
+
+Which gives the same result as before
+
+## And back again
+
+The reverse function to `separate` is `unite` which works as follows
+
+```{r}
+long_df <- unite(data = long_df, col = income_year, inc, year, sep = "_")
+long_df %>% head()
+```
+
+While the reverse function to `pivot_longer` is `pivot_wider` (for `gather` the reverse function is called `spread`), so we can return to a `wide_df` as
+
+```{r}
+wide_df2 <- pivot_wider(data = long_df, names_from = income_year, values_from = value)
+head(wide_df2)
+```
+where the `names_from` argument tells `pivot_wider` where to get the column names, and `values_from` points out which values should go in the new columns.
+
+And we can even check that it is identical to the original
+
+```{r}
+sum(wide_df != wide_df2) # check no elements are different
+```
+
+Rather than uniting the separated columns first, we can directly unite inside `pivot_wider`
+
+```{r}
+wide_df2_better <- pivot_wider(data = long_df_better, names_from = c(inc, year),
+                               names_sep = "_", values_from = value)
+head(wide_df2_better)
+```
+
+and show it is also still the same as the original data frame
+
+```{r}
+sum(wide_df != wide_df2_better) # check no elements are different
+```
+
+
+## Even wider data
+
+We'll return to our `wide_df` and make it *wider* by also making up some expenditure
+
+```{r}
+# we also do not reset the seed here!
+wider_df <- wide_df
+for (ii in 1:n_years) {
+  wider_df <- mutate(wider_df, !!paste0("expenditure_", 2000 + ii) := 
+                       round(3*age/4 + cos(id/20) + ii + rnorm(n_obs), 3))
+}
+```
+
+Next we want to compute the `profit` as the difference of the `income` and `expenditure` each year. To have dynamic variables on the right hand side of the assign, one way is to use the black magic of enclosing the string inside `sym` 
+
+```{r}
+wider_df %>% mutate(!!paste0("profit_", 2001) := (!!sym(paste0("income_", 2001))) -
+                     (!!sym(paste0("expenditure_", 2001)))) %>% 
+  select(paste0(c("income_", "expenditure_", "profit_"), 2001)) %>% head()
+```
+
+*Exercise 2: Get your head around the code above and write a loop to create the profit from 2001 to 2010.*
+
+```{r}
+wider_df_prof <- wider_df
+for (ii in c(1:n_years)) {
+
+  wider_df_prof %>% mutate(!!paste0("profit_", 2000 + ii) := (!!sym(paste0("income_", 2000 + ii))) -
+                     (!!sym(paste0("expenditure_", 2000 + ii)))) -> wider_df_prof
+  }
+head(wider_df_prof)
+```
+
+*CODE Exercise 1: Compute the total profit over all years of all the (strictly) under 25s and divide by 1000. What is the digit in the second decimal place?*
+
+```{r}
+# Function from exercise 1:
+ExtractDecimalPlace <- function(x, n) {
+  x <- abs(x)
+  floor(10*(x*10^(n-1) - floor(x*10^(n-1))))
+}
+
+Code_vec <- rep(0,6)
+wider_df_task1 <- wider_df
+wider_df_task1$profit_tot <- as.numeric(0)
+
+for (ii in 1:n_years) {
+
+  wider_df_task1 %>% mutate(!!paste0("profit_", 2000 + ii) := (!!sym(paste0("income_", 2000 + ii))) -
+                      (!!sym(paste0("expenditure_", 2000 + ii))))-> out
+  wider_df_task1$profit_tot <- wider_df_task1$profit_tot + out[,colnames(out)==(paste0("profit_", 2000 + ii))]
+}
+
+wider_df_task1 %>% filter(wider_df_task1[,"age"]<25) %>% 
+  pull(profit_tot) %>% sum %>% {./1000} %>% ExtractDecimalPlace(2) -> Code_vec[1]
+
+
+```
+
+
+## Wider to longer
+
+To turn your `wider_df` into a `longer_df` we want to turn each column type (`income`, `expenditure`, `profit`) which each have one column for each year, into one single combined column.  This would mean that each row would now become `r 3*n_years` rows.
+
+Here though, in `wider_df`, we currently only have the two column types: `income` and `expenditure`, so that each row would become `r 2*n_years` rows.  We can reuse the `pivot_wider` command, and just add the extra columns.  We'll also be a bit more careful about the new column names (also using `values_to` to name the value column)
+
+```{r}
+longer_df <- pivot_longer(data = wider_df, paste0(c("income_", "expenditure_"), 
+                           2000 + rep(1:n_years, each = 2)),
+                          names_to = c("type", "year"), names_sep = "_",
+                          values_to = "kCHF")
+```
+
+Since the year is stored as a `string` we could recast it as an number
+
+```{r}
+longer_df$year <- as.numeric(longer_df$year)
+```
+
+or tell `pivot_longer` to do that internally with the `names_transform` argument
+
+```{r}
+longer_df <- pivot_longer(data = wider_df, paste0(c("income_", "expenditure_"), 
+                           2000 + rep(1:n_years, each = 2)),
+                          names_to = c("type", "year"), names_sep = "_",
+                          names_transform = list(year = as.numeric),
+                          values_to = "kCHF")
+```
+
+We can again explore the output
+
+```{r}
+wider_df[1, 1:6]
+wider_df[1, c(1:3, 14:16)]
+dim(longer_df)
+longer_df %>% filter(id == 1) %>% head()
+```
+
+*Exercise 3: Repeat the above to create a long version of your wide data frame also containing the profits, splitting the year into its own column.*
+
+```{r}
+
+longer_df_prof <- pivot_longer(data = wider_df_prof, paste0(c("income_", "expenditure_", "profit_"), 
+                           2000 + rep(1:n_years, each = 3)),
+                          names_to = c("type", "year"), names_sep = "_",
+                          names_transform = list(year = as.numeric),
+                          values_to = "kCHF")
+
+head(longer_df_prof)
+
+```
+
+
+*CODE Exercise 2: From your longer data frame, compute the median profit of each individual (strictly) over 40. Sum these medians and divide by 1000.  What is the digit in the second decimal place?*
+
+```{r}
+
+longer_df_prof %>% filter(age > 40) %>% filter(type == "profit") %>% 
+  group_by(id) %>% summarise_at(vars(kCHF), funs(median(., na.rm=TRUE)))%>% summarise_at(vars(kCHF), funs(sum(., na.rm=TRUE)))%>% 
+  {./1000} %>% ExtractDecimalPlace(2) -> Code_vec[2]
+
+```
+
+
+*Exercise 4: Use `pivot_wider` to return your longer data frame to another wider one.*
+
+```{r}
+# as df because otherwise it returns tibble
+longer_df_prof_back <- as.data.frame(pivot_wider(data = longer_df_prof, names_from = c(type, year),
+                               names_sep = "_", values_from = kCHF))
+
+```
+
+
+*CODE Exercise 3: What is the number of non-identical elements when comparing your original wider data frame to the one recreated in Exercise 4?*
+
+```{r}
+Code_vec[3] <- sum(wider_df_prof != longer_df_prof_back)
+```
+
+
+## Plotting
+
+To plot with `ggplot`, we normally need the data in a long format.  Before we plot, we'll add a column which records the median income per person and rank people accordingly.  First we extract this information with `group_by` and `summarise`
+
+```{r, warning = FALSE}
+median_income_df <- longer_df %>% group_by(id) %>% filter(type == "income") %>% 
+  summarise(median_income = median(kCHF)) %>% 
+  mutate(income_rank = factor(rank(median_income, ties.method = "random")))
+```
+
+where we also included new column with the ranks of the median incomes, both numerically and as a factor.
+
+When building up longer sequences of steps with pipes, a useful command is `View` which puts the current output to a new pane in `Rstudio`.  With this command, we could for example check the first line of the code chunk above by inserting `View`, removing the assignment, and commenting out the rest
+
+```{r, eval=FALSE}
+longer_df %>% group_by(id) %>% filter(type == "income") %>% View
+  # summarise(median_income = median(kCHF)) %>% 
+  # mutate(income_rank = factor(rank(median_income, ties.method = "random")))
+```
+
+When we are happy with all the steps, we can create `median_income_df` properly and now we can join with the original data frame
+
+```{r, message=FALSE, warning=FALSE}
+longer_df <- left_join(longer_df, median_income_df)
+```
+
+so that we can send to plot  
+
+```{r, fig.width=10, fig.height=4}
+longer_df %>% filter(type == "income") %>% ggplot() + 
+  geom_line(aes(x = year, y = kCHF, colour = income_rank)) + 
+  theme_bw() + theme(text = element_text(size = 14), 
+                     legend.text = element_text(size = 8),
+                     legend.key.size = unit(0.5,"line"))
+```
+
+*Exercise 5: Create a similar plot of the profit.*
+
+```{r, fig.width=10, fig.height=4}
+longer_df %>% filter(type == "profit") %>% ggplot() + 
+  geom_line(aes(x = year, y = kCHF, colour = income_rank)) + 
+  theme_bw() + theme(text = element_text(size = 14), 
+                     legend.text = element_text(size = 8),
+                     legend.key.size = unit(0.5,"line"))
+```
+
+## Wide simulations
+
+In Programming Exercise 2.4 you created a second loop data frame (like the example after Programming Exercise 2.3) with the sample means and sample variances of uniform, binomial and Gaussian distributed samples with different sample sizes.
+
+**NOTE**: To get the codes to match the online checker, ensure your loops run over the sample sizes and distributions in the same order as the solutions, and reset your seed. 
+
+*Exercise 6: Rerun and recreate your simulated data, but this time directly create a wide data frame where each measure (sample mean or variance), for each distribution and sample size is stored in a separate column. Name the columns according to the pattern "distribution_size_sample_means/variances" with `_` as a separator. Include an `id` column of the repetition number and use, for example `cbind` instead of `rbind`.*
+
+```{r}
+
+#Code copied & adapted from exercise 2
+
+seed_number <- 51628 
+set.seed(seed_number) 
+n_reps <- 400 
+sample_sizes <- c(10, 20, 40) # the possible sample sizes
+distribs <- c("Uniform", "Binomial", "Gaussian") # the range of distributions
+loop_Ex6 <- data.frame(matrix(0, nrow = n_reps)) # start with an empty dataframe
+loop_Ex6 <- loop_Ex6[,FALSE]
+loop_Ex6 <- cbind(loop_Ex6, id = c(1:n_reps))
+
+
+for (s_size in sample_sizes) { 
+  for (distrib in distribs) { 
+    sample_means <- rep(NA, n_reps)
+    sample_variances <- rep(NA, n_reps)
+    
+    for (ii in 1:n_reps) { 
+
+      if (distrib == "Uniform") { 
+        local_sample <- 4*runif(s_size)
+      }
+      if (distrib == "Binomial") { 
+        local_sample <- rbinom(s_size, 4, 0.5)
+      }
+      if (distrib == "Gaussian") { 
+        local_sample <- rnorm(n = s_size, mean = 2, sd = 1)
+      }
+      sample_means[ii] <- mean(local_sample) # compute and store the mean
+      sample_variances[ii] <- var(local_sample) 
+      
+    } 
+    loop_Ex6 <- cbind(loop_Ex6, sample_means)
+    colnames(loop_Ex6)[ncol(loop_Ex6)] <- paste0(distrib,s_size, "_sample_means")
+    
+    loop_Ex6 <- cbind(loop_Ex6, sample_variances)
+    colnames(loop_Ex6)[ncol(loop_Ex6)] <- paste0(distrib,s_size, "_sample_variances")
+      
+  } # end distribution loop
+} # end sample size loop
+
+```
+
+*CODE Exercise 4: How many columns does your data have?*
+
+```{r}
+Code_vec[4] <- ncol(loop_Ex6)
+
+```
+
+*CODE Exercise 5: Compute the row sums of the even rows, not including the `id` column.  What digit is in the second decimal place of the median of these selected row sums?*
+
+```{r}
+Ex5_vec <- rep(0,nrow(loop_Ex6)/2)
+for (i in seq(2,nrow(loop_Ex6), by = 2)){
+  Ex5_vec[i/2] <- sum(loop_Ex6[i,2:ncol(loop_Ex6)])
+} 
+Code_vec[5] <- ExtractDecimalPlace(median(Ex5_vec),2)
+
+```
+
+*Exercise 7: Recreate your original data frame from Programming Exercises 2.4, including a new `id` column keeping track of the repetition number. Turn it into a truly long format by pivoting the sample means and sample variances into a single column.*
+
+```{r}
+# Code copied from Exercise sheet 2
+
+seed_number <- 51628 
+set.seed(seed_number) 
+n_reps <- 400 
+sample_sizes <- c(10, 20, 40) # the possible sample sizes
+distribs <- c("Uniform", "Binomial", "Gaussian") # the range of distributions
+loop_df_2 <- data.frame() # start with an empty dataframe
+
+for (s_size in sample_sizes) { # loop over possible sample sizes
+  for (distrib in distribs) { # loop over the different distributions
+    sample_means <- rep(NA, n_reps) # create a vector of sample means
+    sample_variances <- rep(NA, n_reps) # create a vector of sample variances
+    
+    for (ii in 1:n_reps) { # loop over the repetitions
+      # obtain a random sample
+      if (distrib == "Uniform") { 
+        local_sample <- 4*runif(s_size)
+      }
+      if (distrib == "Binomial") { 
+        local_sample <- rbinom(s_size, 4, 0.5)
+      }
+      if (distrib == "Gaussian") { 
+        local_sample <- rnorm(n = s_size, mean = 2, sd = 1)
+      }
+      sample_means[ii] <- mean(local_sample) # compute and store the mean
+      sample_variances[ii] <- var(local_sample) # compute and store the variance
+    } # end repetition loop
+    # build a local data frame for the repetitions with a given sample size and distribution
+    local_df <- data.frame(distribution = distrib, sample_size = s_size,
+                  sample_means = sample_means, 
+                  sample_variances = sample_variances, id = c(1:n_reps))
+    loop_df_2 <- rbind(loop_df_2, local_df) # append to the full data frame
+  } # end distribution loop
+} 
+
+longer_df_Ex7 <- pivot_longer(data = loop_df_2, c("sample_means", "sample_variances"),
+                          names_to = "Metric")
+head(longer_df_Ex7)
+```
+
+
+*Exercise 8: Now turn it into a wide format using `pivot_wider`.*
+
+```{r}
+df_Ex8 <- pivot_wider(data = longer_df_Ex7, 
+                           names_from = c(distribution, sample_size, Metric), 
+                           values_from = value)
+
+```
+
+*CODE Exercise 6: What is the number of identical elements when comparing the wide data frame from Exercise 8 to that of Exercise 6?*
+
+```{r}
+
+Code_vec[6] <- sum(df_Ex8 == loop_Ex6)
+
+```
+
+
+## Long ggplots
+
+Last week we made a simple dataframe to plot using loops
+
+```{r}
+x <- seq(1, 10, by = 0.1)
+fns_df <- data.frame(x = x, 
+                     log = log(x), 
+                     sqrt = sqrt(x), 
+                     sin = sin(x))
+```
+
+As above, the tidyverse way of making the plots from last week would be to have the data in a long format and use facets.
+
+*Exercise 9: Turn fns_df into a long dataframe and plot the lines as different facets using ggplot.*
+
+
+## CODE concatenation
+
+*FINAL CODEWORD: Combine your answers to CODE Exercises `c(1:6)` into a single string with underscores separating the individual answers. Upload this codeword, without speech marks.*
+
+```{r}
+paste(as.character(Code_vec), collapse="_") # Code copied from exercise 1
+```
