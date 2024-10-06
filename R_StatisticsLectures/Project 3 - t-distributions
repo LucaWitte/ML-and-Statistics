@@ -1,0 +1,175 @@
+---
+title: "Introduction to Statistics and R - Exercise 2"
+author: "Luca Witte"
+date: "2022-10-14"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2) 
+library(tidyr)
+
+```
+
+## Task 3.1
+
+In this task, random samples are drawn from a continuous and a student-*t* distribution. For different sample sizes, two-sided *t*-tests against a mean of zero are conducted.
+
+```{r}
+sample_num <- c(5,20,50,100)
+repeats <- 10000
+
+uni_pvalues <- matrix(0, nrow = length(sample_num), ncol = repeats)
+t_pvalues <- matrix(0, nrow = length(sample_num), ncol = repeats)
+
+alpha_test <- matrix(0, ncol = length(sample_num), nrow = 3) 
+rownames(alpha_test) <- c("sample num", "uniform dist", "t-dist")
+alpha_test["sample num",] <- sample_num
+
+alpha <- 0.05
+
+par(mfrow = c(4,2)) # for all histograms 
+par(mar=c(4.5,4.5,1,1))
+for (samples_index in sample_num){
+  
+  for (i in c(1:repeats)){
+    uni_sample <- runif(n = samples_index, min = -1, max = 1)
+    uni_pvalues[which(sample_num == samples_index), i] <- t.test(uni_sample)$"p.value"
+    
+    t_sample <- rt(n = samples_index, df = 1)
+    t_pvalues[which(sample_num == samples_index), i] <- t.test(t_sample)$"p.value"
+  }
+    
+    hist(uni_pvalues[which(sample_num == samples_index),], breaks = 50, 
+         xlab = "p-value", ylab = "frequency",
+         main = paste(samples_index, "samples from uniform dist."))
+    
+    hist(t_pvalues[which(sample_num == samples_index),], breaks = 50, 
+         xlab = "p-value", ylab = "frequency",
+         main = paste(samples_index, "samples from student-t dist."))
+  
+  alpha_test["uniform dist", which(sample_num == samples_index)] <- 
+    uni_pvalues[which(sample_num == samples_index), ] %>% {.[. < alpha]} %>% length()
+  alpha_test["t-dist", which(sample_num == samples_index)] <- 
+    t_pvalues[which(sample_num == samples_index), ] %>% {.[. < alpha]} %>% length()
+}
+
+```
+
+Among the increased sample sizes, all sample p-values are widely distributed between 0 and 1. By definition, these are the limits of the p-value. The p-values of the samples from the uniform distribution are uniformly distributed themselves, whereas the samples from the student-t distribution show a peak around 0.3 to 0.4. These observations are consistent among all sample sizes. Only the peak observed in the t-distributed sample p-values appears to shift to slightly lower values with higher sample numbers.
+
+The data drawn from uniform distributions is explained by the fact that every possible value in the interval occurs with the same probability. Therefore, a deviation from the null can be observed in some samples and the size of deviation is unbiased. Subsequently, no peak in the distribution of p-values can be expected.
+
+```{r, out.height="40%", fig.align = "center"}
+par(mfrow = c(1,2))
+
+hist(uni_pvalues[1,], breaks = 40, xlab = "p-value", ylab = "frequency",
+         main = paste(sample_num[1], "samples from uniform dist."))
+
+hist(t_pvalues[1,], breaks = 40, xlab = "p-value", ylab = "frequency",
+         main = paste(sample_num[1], "samples from student-t dist."))
+
+```
+The task only referred to the smallest sample size (5) which is depicted above. For the samples drawn from a uniform distribution, the p-values are already somewhat evenly distributed. Due to the low sample size, random fluctuations have a strong proportional impact on the mean and therefore a higher number of p-values very close to zero can be observed. As shown earlier, this effect evens out with larger sample sizes.
+
+For the samples drawn from the student-*t* distribution, the histogram shows an enrichment of p-values around 0.4, but contains some samples with p-values close to zero.
+
+
+
+```{r, out.height="40%", fig.align = "center"}
+
+par(mfrow = c(1,2))
+plot(y = alpha_test["uniform dist",], x= alpha_test["sample num",],
+     xlab = "sample number", ylab = paste("number of p-values below", alpha), 
+     pch = 19,  ylim = c(0, max(alpha_test)*1.1))
+points(y = alpha_test["t-dist",], x= alpha_test["sample num",], col = "red", pch = 19)
+legend("topright", legend=c("Uniform distribution", "Student t-distribution"), 
+       col = c("black", "red"), pch = 19, cex=0.7)
+
+plot(y = alpha_test["uniform dist",]/repeats, x= alpha_test["sample num",],
+     xlab = "sample number", ylab = paste("fraction of p-values below", alpha), 
+     pch = 19,  ylim = c(0, max(alpha_test/repeats)*1.1))
+points(y = alpha_test["t-dist",]/repeats, x= alpha_test["sample num",], col = "red", pch = 19)
+legend("topright", legend=c("Uniform distribution", "Student t-distribution"), 
+       col = c("black", "red"), pch = 19, cex=0.7)
+```
+To investigate, how likely a given result is obtained from random data with no effect, null hypothesis significance testing is commonly used. A *t*-test is conducted and the obtained p-value is compared to a significance level (here: 0.05). If p is smaller than the set threshold, the null is rejected and an effect is assumed. Though, the *t*-test assumes normally distributed data. Above, the fraction of p-values below $\alpha$ is plotted for both the uniformly and the student-*t* distributed data obtained earlier.  
+
+As expected from the previously discussed histograms, the number of p-values below the significance level decreases for the the samples from the uniform data when the sample number is increased above 5. This is most likely due to the fact that randomly occurring extreme values are averaged out when the sample size is higher than 5. After this point, a relatively constant fraction of the results yields a significant outcome. This fraction is approximately 5% of the samples, which is expected as every outcome has the same probability. 
+
+For the student *t*-distribution, the fraction of "significant" results remains consistant among sample numbers. In general, the student-t distribution shows less p-values below the significance threshold. This is expected, as the distribution used for generating the data has a mean of 0 and therefore most samples are expected to show no significant deviation from the null. The student *t*-distribution with a high number of degrees of freedom approximates a Gaussian distribution. For lower degrees of freedom, more values are found in the tail ends of the student *t*-distribution compared to the normal distribution. This explains why approximately 2% of the samples are false positive in the depicted case with only one degree of freedom.
+
+## Task 3.2
+
+A data set was given without much context, therefore the length of the data and the observations are explored first:
+
+```{r}
+lung_data <- read.csv("./data/lung_data.csv")
+lung_data$Trial.arm <- as.factor(lung_data$Trial.arm)
+summary(lung_data)
+table(lung_data$Trial.arm)
+```
+
+As shown above, the given data is from a clinical trial with two cohorts of 20 person each. A group of asthma patients was treated with a new compound, whereas the control group received a placebo. For both groups, lung function was measured. 
+
+A boxplot is used for a first exploration of the data:
+```{r}
+cols <- c(4,7) 
+boxplot(lung_data$Lung.function ~ lung_data$Trial.arm, 
+        ylab = "lung function", xlab = "patient group")
+stripchart(lung_data$Lung.function ~ lung_data$Trial.arm, add = TRUE, 
+           vertical = TRUE, method = "jitter", pch = 19,
+           col = alpha(cols, 0.6))
+```
+On first glance, the median seams to be increased in the tratment group, whereas the interquartile range is approximately constant. The individuals with the lowest lung function score are similar in both groups. This might indicate that there is at least one individual not responding to the treatment. The lower quantile of the treatment group lies above the median of the control group. This is a possible indication that a large number of individual responded to the treatment and the effect is not caused by only few patients showing a very strong effect. We can explore these aspects of the data more explicitly by investigating the corresponding numbers: 
+
+```{r}
+filter(lung_data, Trial.arm == "Control") %>% .[,"Lung.function"] %>% IQR
+filter(lung_data, Trial.arm == "Treatment") %>% .[,"Lung.function"] %>% IQR
+
+```
+The interquartile range of both groups indeed remains very similar. This indicates that the inter-individual differences are comparable between both groups. As an example, a strong deviation could have indicated that some individuals respond to the treatment very differently than others. 
+
+```{r}
+filter(lung_data, Trial.arm == "Control") %>% .[,"Lung.function"] %>% quantile
+filter(lung_data, Trial.arm == "Treatment") %>% .[,"Lung.function"] %>% quantile
+```
+From the quantiles, it is clear that the meadian and the quartiles increase in the treatment group. This indicates an improved lung function after treatment. Interestingly, the lowest value remains consistent, possibly indicating a non-responder.
+
+As the methodology of the measurement for lung function is unknown, it cannot be estimated how meaningful the observed change is in terms of improved health. A healthy control cohort would be necessary to know the baseline value for lung function.
+
+Next, a two sample Welch's *t*-test is conducted to test for differences between the two independent groups:
+
+```{r}
+t.test(filter(lung_data, Trial.arm == "Control")$Lung.function,
+       filter(lung_data, Trial.arm == "Treatment")$Lung.function)
+```
+Assuming a significance level of $\alpha = 0.05$, the test indicates a significant difference between sample means with a p-value of 0.037. Due to the low group size, these results might require further validation. For example, the desired improvement in lung function could be observed by measurement of the same patients before and after treatment. In this case, a paired *t*-test can be used. Measurements before the drug trial would have been useful also in the presented case, as no information are available on whether both groups had the same lung function before the intervention.
+
+In summary, the data indicates that an improvement in lung function could be achieved by treatment with the new drug. Due to a lack of context, no statement can be made about the actual health-indications of this improvement. Further, the low group size dictates caution in the interpretation of the results. Though, from the obtained results, it can be concluded that the drug candidate might be effective and should be investigated further in subsequent trials. 
+
+## Task 3.3
+
+This is bad practice and often referred to as "p-hacking". The idea is to repeat an experiment until an apparently significant result is obtained. With enough repeats, false positives occur inevitably. For scientist judged by their output in terms of "relevant" findings, there is an incentive to select only significant data to obtain more high impact publications or other status-defining symbols. 
+
+We have seen above that even from a continuous distribution and a student-*t* distribution both with mean zero, a "significant" finding can be generated with a large enough number of repeats. These do not reflect a true effect in the underlying data, but are false positives. With enough trials therefore, there will be a result with a p-value below significance threshold, but this would not reflect any improvement in patients health. Subsequently, the reported p-value is meaningless and the long term goal of improving patients lives is not achieved. Good practice is planning the sampling and the statistical analysis before conducting the experiment to obtain unbiased results.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
