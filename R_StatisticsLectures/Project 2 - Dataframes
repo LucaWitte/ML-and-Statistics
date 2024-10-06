@@ -1,0 +1,524 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: '2: Programming - data frames'
+author: "Jack Kuipers"
+date: "6 October 2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 3, fig.width = 6)
+```
+
+Read and work through this document, completing the exercises on the way. Certain exercises will combine to provide a codeword. Check and submit your codeword at `cbg.bsse.ethz.ch/isar`. Also send the codeword, along with the accompanying `Rmarkdown` file named `isar_programming_02-lastname_firstname.Rmd` to: isar-teaching.cbg@bsse.ethz.ch. In case of any questions, please feel free to contact us per e-mail or on Piazza.
+
+
+**Submissions are due 12 October 2022, 23:59.**
+
+
+## Data frames
+
+We can combine a collection of vectors of the same length
+
+```{r}
+ids <- 1:5
+names <- c("Amy", "Bob", "Dan", "Eve", "Fred")
+ages <- c(40, NA, 6, 16, 55)
+smokers <- c(TRUE, NA, FALSE, FALSE, TRUE)
+```
+
+into a single object called a **data frame**
+
+```{r}
+df <- data.frame(
+  id = ids,
+  name = names,
+  age = ages,
+  smoker = smokers
+)
+df
+```
+
+where we, and `R`, understand that each row corresponds to the same subject.
+
+We can check how big our dataset is
+
+```{r}
+nrow(df) # number of rows
+ncol(df) # number of columns
+dim(df) # both
+```
+
+There are several ways to access one column of a data frame
+
+```{r}
+df$age
+df["age"] # by column name
+df[3] # by column number
+df[["age"]] # with two brackets
+```
+
+but between the last two options it is better to use the column name rather than the number as this could change if you modify the data frame!  You can also see from the output that using `$` or `[[]]` extracts the column as a **vector** while the other option with the `[]` return a **data frame**
+
+```{r}
+class(df$age) # check the object type
+class(df["age"])
+class(df[["age"]])
+```
+
+We can likewise select rows by giving a second argument to the `[]`
+
+```{r}
+df[3:5, c("age","smoker")]
+```
+
+and keep all columns by leaving the second argument blank
+
+```{r}
+df[3:5, ]
+```
+
+Adding a new column can be achieved with assignment
+
+```{r}
+df$young <- 1*(df$age < 40)
+df
+```
+
+and deleted by assigning as `NULL`
+
+```{r}
+df$id <- NULL
+df
+```
+
+
+## Data types in data frames
+
+One feature of data frames is that they can include different data types in different columns.  We can look into the data frame's structure with `str`
+
+```{r}
+str(df)
+```
+
+Or we can check each column in a loop
+
+```{r}
+for(ii in colnames(df)){ # loop over the column identifiers
+  print(ii)
+  # the [[]] version of column selection works with dynamic (assigned) variable names too!
+  print(class(df[[ii]]))
+}
+```
+
+The first column we want to turn into a **factor**, which is a way of storing **categorical** variables which can take discrete levels.
+
+```{r}
+df$name <- as.factor(df$name)
+df$name
+```
+
+Internally the levels are stored as integers, which we can extract by changing the class to numeric or integer
+
+```{r}
+as.numeric(df$name)
+as.integer(df$name)
+```
+
+Likewise we can turn logical or numerical vectors into factors
+
+```{r}
+as.factor(df$age)
+as.factor(df$smoker)
+```
+
+but as factors they no longer behave like numbers, and cannot for example be passed to mathematical functions
+
+```{r}
+df$age^2
+as.factor(df$age)^2
+```
+
+We can also convert to character strings
+
+```{r}
+as.character(df$name)
+as.character(df$age)
+```
+
+but then only string functions can be applied to such objects.  When creating data frames is it important that each column has the correct class for `R` to handle it properly.
+
+## Data frames from files
+
+Usually we will read in data frames from files, like in the lecture
+
+```{r}
+swiss_army_df <- read.csv("./data/Zurich_data.csv")
+```
+
+for which we can display the top and bottom few rows
+
+```{r}
+head(swiss_army_df, 3)
+tail(swiss_army_df, 4)
+```
+
+*Exercise 1: Add a new column to the data frame of the BMI (weight divided by height in metres squared).*
+
+```{r}
+swiss_army_df$BMI <- swiss_army_df$Weight / ((swiss_army_df$Height/100)^2)
+head(swiss_army_df)
+```
+
+*CODE Exercise 1: What is the digit in the second decimal place of the mean BMI of the whole data set?*
+
+```{r}
+# Function from exercise 1:
+ExtractDecimalPlace <- function(x, n) {
+  x <- abs(x)
+  floor(10*(x*10^(n-1) - floor(x*10^(n-1))))
+}
+
+Code <- rep(0,6)
+
+(Code[1] <- ExtractDecimalPlace(mean(swiss_army_df$BMI),2))
+```
+
+
+If we want to select by gender, we could use `which`
+
+```{r}
+head(swiss_army_df[which(swiss_army_df$Sex == "F"), ])
+```
+
+but we'll often use the `filter` function from `dplyr`
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse) # load library which includes dplyr
+# note for latex, we need to suppress the warning!!!
+head(filter(swiss_army_df, Sex == "F"))
+```
+
+which actually creates a smaller data frame, which can be accessed as before
+
+```{r}
+filter(swiss_army_df, Sex == "F")$Height[1:6]
+```
+
+We can filter by several criteria, where they all need to be satisfied, by including them with comma separation
+
+```{r}
+filter(swiss_army_df, Sex == "F", Weight %in% c(51, 72, 84))[1:6, ]
+```
+
+That this is equivalent to performing logical AND using `&`
+
+```{r}
+filter(swiss_army_df, Sex == "F" & Weight %in% c(51, 72, 84))[1:6, ]
+```
+
+but with the logical version we can also use OR with `|` etc.  As a side note, `&` and `|` operate element wise on vectors
+
+```{r}
+c(1, 0, 1, 0) & c(0, 0, 1, 1) 
+c(1, 0, 1, 0) | c(0, 0, 1, 1) 
+```
+
+while the versions with two copies of the character `&&` and `||` only operate on the **first** element of each vector
+
+```{r}
+c(1, 0, 1, 0) && c(0, 0, 1, 1) 
+c(1, 0, 1, 0) || c(0, 0, 1, 1) 
+```
+
+and stop evaluating once the TRUE/FALSE condition can be determined.  This can be useful to avoid errors or unwanted behaviour:
+
+```{r}
+x <- "c"
+(x > 5) ## this is TRUE!!! Trying (x/2 > 5) would give an error
+is.numeric(x) && (x/2 > 5) # the first condition being FALSE stops further evaluation
+```
+
+
+*CODE Exercise 2: What is the digit in the second decimal place of the difference in mean BMI between women and men in the data set?*
+
+```{r}
+women_meanBMI <- mean(filter(swiss_army_df, Sex == "F")[["BMI"]])
+men_meanBMI <- mean(filter(swiss_army_df, Sex == "M")[["BMI"]])
+
+(Code[2] <- ExtractDecimalPlace(abs(women_meanBMI - men_meanBMI), 2)) 
+# abs so it does not matter which mean is higher
+
+```
+
+
+Since we loaded the `tidyverse`, we can use the `mutate` command to create new columns in the dataset instead
+
+```{r, message=FALSE, warning=FALSE}
+head(mutate(swiss_army_df, Height_in_m = Height/100))
+```
+
+whose syntax means that we only need to name the data frame in the first argument, and the assignment of the new column in the second argument can refer to the other column names.  Several new columns can be added at once with comma separation:
+
+```{r, message=FALSE, warning=FALSE}
+head(mutate(swiss_army_df, Height_in_m = Height/100, Weight_in_tonnes = Weight/1000))
+```
+
+*Exercise 2: Remove the previous BMI column from the data frame and add a new column of the BMI computed using `mutate`.*
+
+```{r}
+swiss_army_df$BMI <- NULL
+swiss_army_df <- mutate(swiss_army_df, BMI = Weight / ((Height/100)^2))
+
+```
+
+
+## Plots with `ggplot`
+
+Data frames are needed to use `ggplot` to create plots.  We take the example from last week
+
+```{r}
+df_x <- data.frame(x = 1:10)
+df_last_week <- mutate(df_x, y = log(x), z = sqrt(x))
+```
+
+where we start by placing the two lines we plotted in different columns.  We can recreate the plot from last week, by passing the data frame twice, once for each line plotted with the addition of `geom_line` 
+
+```{r}
+ggplot() + geom_line(data = df_last_week, aes(x = x, y = y), col="dodgerblue") +
+  geom_point(data = df_last_week, aes(x = x, y = y), col="dodgerblue") +
+  geom_line(data = df_last_week, aes(x = x, y = z), col="darkorange", linetype="dashed") +
+  theme_bw() + theme(text = element_text(size = 14)) + # then add some labels by hand
+  annotate("text", df_last_week$x[5], df_last_week$y[5], label=c("y")) +
+  annotate("text", df_last_week$x[5], df_last_week$z[5], label=c("z"))
+```
+
+and we also added dots on the first line with `geom_point`.
+
+But `ggplot` likes to have the plotting variable in one column.  With this change in mindset, we need to include the transformation as another column to distinguish between the two lines.  Look at the following two data frames
+
+```{r}
+df_1 <- mutate(df_x, y = log(x), transformation = "log")
+df_2 <- mutate(df_x, y = sqrt(x), transformation = "sqrt")
+```
+
+We can combine them into a single data frame with the `rbind` command (or with the `tidyverse` version: `bind_rows`)
+
+```{r}
+df_this_week <- rbind(df_1, df_2)
+```
+
+Now it can be handled by `ggplot` much more naturally (apart from the fact we only have dots on one line!) and with a legend detailing the two transformations
+
+```{r}
+ggplot(df_this_week) + geom_line(aes(x = x, y = y, col = transformation, 
+                                     linetype = transformation)) +
+  scale_colour_manual(values = c("dodgerblue", "darkorange")) +
+  geom_point(data=filter(df_this_week, transformation == "log"), 
+             aes(x = x, y = y), col = "dodgerblue") +
+  theme_bw() + theme(text = element_text(size = 14)) 
+```
+
+
+## Loops of loops
+
+Here we are going to build a single data frame of the sample means and sample variances of a range of random samples of different sizes and from different distributions.  We do this with lots of loops and by joining data frames with `rbind`
+
+*Exercise 3: Look through the following code block and make sure you understand what it is doing.*
+
+```{r}
+seed_number <- 51628 # remember to use your personal seed
+set.seed(seed_number) # and to set before we sample
+n_reps <- 400 # the number of repetitions
+sample_sizes <- c(10, 20, 40) # the possible sample sizes
+distribs <- c("Uniform", "Binomial") # the range of distributions
+loop_df <- data.frame() # start with an empty dataframe
+
+for (s_size in sample_sizes) { # loop over possible sample sizes
+  for (distrib in distribs) { # loop over the different distributions
+    sample_means <- rep(NA, n_reps) # create a vector of sample means
+    sample_variances <- rep(NA, n_reps) # create a vector of sample variances
+    
+    for (ii in 1:n_reps) { # loop over the repetitions
+      # obtain a random sample
+      if (distrib == "Uniform") { 
+        local_sample <- 4*runif(s_size)
+      }
+      if (distrib == "Binomial") { 
+        local_sample <- rbinom(s_size, 4, 0.5)
+      }
+      sample_means[ii] <- mean(local_sample) # compute and store the mean
+      sample_variances[ii] <- var(local_sample) # compute and store the variance
+    } # end repetition loop
+    # build a local data frame for the repetitions with a given sample size and distribution
+    local_df <- data.frame(distribution = distrib, sample_size = s_size,
+                  sample_means = sample_means, sample_variances = sample_variances)
+    loop_df <- rbind(loop_df, local_df) # append to the full data frame
+  } # end distribution loop
+} # end sample size loop
+```
+
+We can check the resulting data frame has the size we expect
+
+```{r}
+# check we have as many entries as we expect
+nrow(loop_df) == n_reps*length(sample_sizes)*length(distribs)
+ncol(loop_df) == 4
+```
+
+*CODE Exercise 3: What is the digit in the second decimal place of the mean of the sample means across the whole data frame?*
+
+```{r}
+(Code[3] <- ExtractDecimalPlace(mean(loop_df$sample_means), 2))
+```
+
+
+*Exercise 4: Create another data frame with an additional, third distribution: a Gaussian with mean 2 and sd 1 (still including the uniform and binomial samples, in the order: uniform, binomial, Gaussian).  Remember to set your seed again before generating this data frame.*
+
+```{r}
+# Just the code from above copied & appended
+
+seed_number <- 51628 
+set.seed(seed_number) 
+n_reps <- 400 
+sample_sizes <- c(10, 20, 40) # the possible sample sizes
+distribs <- c("Uniform", "Binomial", "Gaussian") # the range of distributions
+loop_df_2 <- data.frame() # start with an empty dataframe
+
+for (s_size in sample_sizes) { # loop over possible sample sizes
+  for (distrib in distribs) { # loop over the different distributions
+    sample_means <- rep(NA, n_reps) # create a vector of sample means
+    sample_variances <- rep(NA, n_reps) # create a vector of sample variances
+    
+    for (ii in 1:n_reps) { # loop over the repetitions
+      # obtain a random sample
+      if (distrib == "Uniform") { 
+        local_sample <- 4*runif(s_size)
+      }
+      if (distrib == "Binomial") { 
+        local_sample <- rbinom(s_size, 4, 0.5)
+      }
+      if (distrib == "Gaussian") { 
+        local_sample <- rnorm(n = s_size, mean = 2, sd = 1)
+      }
+      sample_means[ii] <- mean(local_sample) # compute and store the mean
+      sample_variances[ii] <- var(local_sample) # compute and store the variance
+    } # end repetition loop
+    # build a local data frame for the repetitions with a given sample size and distribution
+    local_df <- data.frame(distribution = distrib, sample_size = s_size,
+                  sample_means = sample_means, sample_variances = sample_variances)
+    loop_df_2 <- rbind(loop_df_2, local_df) # append to the full data frame
+  } # end distribution loop
+} # end sample size loop
+```
+
+
+*CODE Exercise 4: What is the digit in the second decimal place of the mean of the sample variances of the Gaussian samples with sample size 20?*
+
+```{r}
+
+mean_Gauss20 <- mean(
+  filter(loop_df_2, distribution == "Gaussian", sample_size == 20)$sample_variances
+  ) # sanity check: is approximately 1?
+
+(Code[4] <- ExtractDecimalPlace(mean_Gauss20, 2))
+```
+
+*Exercise 5: Filter your new data frame to only select the uniform and binomial samples.  Are the sample means and variances identical to the previous data frame?  Explain.*
+
+```{r}
+loop_df_filtered <- filter(loop_df_2, distribution == "Uniform" | distribution == "Binomial")
+table(loop_df_filtered$sample_means == loop_df$sample_means)
+table(loop_df_filtered$sample_variances == loop_df$sample_variances)
+
+head(loop_df) == head(loop_df_filtered)
+
+```
+We can see that approximately one third of the entries are identical. These are the ones for the sampe size of 10. The reason for this might be, that we added additional steps within the looping and therefore the RNG in subsequent calculations is different. For the ones that occur before the first Gaussian drawing, we obtain the same results.
+
+*CODE Exercise 5: What is the sample size of the sample with the lowest sample variance?*
+
+```{r}
+
+(Code[5] <- loop_df_2[loop_df_2$sample_variances == min(loop_df_2$sample_variances),]$sample_size)
+
+
+```
+
+
+## More ggplots
+
+Because we built the data frame in a way `ggplot` understands, we can easily make box plots of each, for example if we colour by the `distribution` and fill by the `sample_size`.  For the latter, `ggplot` must understand the numerical values as being discrete so we cast them as a **factor**
+
+```{r}
+ggplot(loop_df, aes(x = "", y = sample_means, colour = distribution, 
+                    fill = as.factor(sample_size))) +
+  geom_boxplot() + theme_bw() + theme(text = element_text(size = 14)) 
+```
+
+The colours aren't great, and the x-axis isn't very informative.  Let's separate out the two distributions and play with the colours and transparency a bit
+
+```{r, warning=FALSE}
+ggplot(loop_df, aes(x = distribution, y = sample_means, colour = distribution, 
+                    fill = distribution, alpha = as.factor(sample_size))) + 
+  geom_boxplot() + scale_colour_manual(values = c("dodgerblue", "darkorange")) +
+  scale_fill_manual(values = c("dodgerblue", "darkorange")) + 
+  theme_bw() + theme(text = element_text(size = 14)) +
+  scale_alpha_discrete(range = c(0.4, 0.8))
+```
+
+The separation can be improved by using **facets**.  We'll try facetting by `distribution` and then we can have the x-axis be the `sample_size` and we no longer need the legend  
+
+```{r, warning=FALSE}
+ggplot(loop_df, aes(x = as.factor(sample_size), y = sample_means, colour = distribution,
+                    fill = distribution, alpha = as.factor(sample_size))) + 
+  geom_boxplot() + scale_colour_manual(values = c("dodgerblue", "darkorange")) +
+  scale_fill_manual(values = c("dodgerblue", "darkorange")) + 
+  theme_bw() + theme(text = element_text(size = 14)) +
+  scale_alpha_discrete(range=c(0.4, 0.8)) + 
+  facet_wrap(~distribution) + theme(legend.position = "none")
+```
+
+*Exercise 6: Add a new column of the sample size (as a factor) to your data frame from Exercise 4 (with the sample means and variances from 3 distributions)*
+
+*Exercise 7: Use this data frame to make a similar plot, including a facet for the Gaussian sample means.  Overlay points for each sample mean on top (watch out for outliers).*
+
+*Exercise 8: Make a similar plot for the sample variances instead of sample means, but with violins instead of boxes.  Overlay points for each sample variance on top.*
+
+*CODE Exercise 6: From your data frame from Exercise 4 with three distributions, compute the IQRs of the sample variances for each distribution and each sample size.  Which sample size has the smallest IQR?* 
+
+```{r}
+
+sample_sizes <- c(10, 20, 40) 
+distribs <- c("Uniform", "Binomial", "Gaussian") 
+Out_6 <- as.data.frame(matrix(rep(0, length(sample_sizes)*length(distribs) * 3), 
+                              ncol = 3))
+colnames(Out_6) <- c("Samplesize", "Distribution", "IQR")
+i <- 1
+for (s_size in sample_sizes) { 
+  for (distrib in distribs) { 
+    temp <- filter(loop_df_2, sample_size == s_size, distribution == distrib)
+    Out_6[i,] <- c(s_size,distrib,IQR(temp$sample_variances))
+    i <- i +1
+  } 
+} 
+
+(Code[6] <- Out_6[Out_6$IQR == min(Out_6$IQR),]$Samplesize)
+
+```
+
+
+## CODE concatenation
+
+*FINAL CODEWORD: Combine your answers to CODE Exercises `c(1:6)` into a single string with underscores separating the individual answers. Upload this codeword, without speech marks.*
+
+```{r}
+paste(as.character(Code), collapse="_") # Code copied from exercise 1
+```
+
+
+
+
