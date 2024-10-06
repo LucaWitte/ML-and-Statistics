@@ -1,0 +1,272 @@
+---
+title: "isar Exercise sheet 7"
+author: "Luca Witte"
+date: "2022-11-13"
+output: pdf_document
+
+header-includes:
+  \usepackage[labelfont = bf, font =  {small, sf},
+  singlelinecheck=true, margin=22pt]{caption}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(kableExtra)
+library(igraph)
+
+```
+
+# Task 7.1 - Lung function data
+
+```{r, echo = FALSE}
+lf_dat <- read.csv("./data/lung_data_all.csv")
+
+```
+The presented clinical trial consisted of two cohorts of 20 asthma patients each. One cohort ("Treatment") was given a new compound, whereas the other group was given a placebo ("Control"). After application of the compound/placebo, lung function of the patients was measured. A report of this data was generated before. To summarize the main findings:
+
+The data obtained from both groups was approximately normally distributed. A shift in mean was observed in the treatment group. A two-sample *t*-test with the null hypothesis $H_0:\ \mu_{treatment} - \mu_{control} = 0$ returned a p-value of 0.037, leading to a rejection of the null hypothesis at a significance level of $\alpha = 0.05$. 
+
+```{r, results = "asis", echo=FALSE, out.width = '60%', fig.align="center", fig.cap="Overview of previous results from the data set with reduced information."}
+par(mfrow = c(1,2))
+
+qqnorm(lf_dat[lf_dat$Trial.arm == "Control", ]$Lung.function,
+       col = 4, pch = 19, 
+       xlim = c(-2,2), ylim = c(9,11.5))
+qqline(lf_dat[lf_dat$Trial.arm == "Control", ]$Lung.function,
+       col = 4)
+
+par(new=TRUE)
+qqnorm(lf_dat[lf_dat$Trial.arm == "Treatment", ]$Lung.function,
+       col = 7, pch = 19, 
+       xlim = c(-2,2), ylim = c(9,11.5))
+qqline(lf_dat[lf_dat$Trial.arm == "Treatment", ]$Lung.function,
+       col = 7)
+
+legend("bottomright", col = c(4,7), lty = 1, 
+       lwd = 2.5, legend = c("Control", "Treatment"))
+
+cols <- c(4,7) 
+boxplot(lf_dat$Lung.function ~ lf_dat$Trial.arm, 
+        ylab = "Lung Function", xlab = "Trial Arm",
+        main = "Boxplot of patient groups")
+stripchart(lf_dat$Lung.function ~ lf_dat$Trial.arm, add = TRUE, 
+           vertical = TRUE, method = "jitter", pch = 19,
+           col = alpha(cols, 0.6))
+```
+
+
+Now, a more comprehensive data set was obtained. It contains the same data, but additional information on the gender of the individuals in the clinical trial:
+
+```{r, echo = FALSE, warnings = FALSE, message=FALSE}
+table1 <- lf_dat %>% group_by(Trial.arm, Sex) %>% summarize(Min = min(Lung.function),
+            Q1 = quantile(Lung.function, 0.25),
+            Median = median(Lung.function),
+            Mean = round(mean(Lung.function),2),
+            Q3 = quantile(Lung.function, 0.75),
+            Max = max(Lung.function),
+            IQR = IQR(Lung.function), 
+            N = length(Lung.function))
+
+
+knitr::kable(table1, format = "latex", align = "lccccccccc", 
+             booktabs = TRUE,
+             caption = "Statistics of lung function in the results from the clinical trial. Data has been stratified by sex and trial arm.") %>% 
+  kable_styling(position="center", font_size = 9, latex_options = "hold_position")%>% 
+  column_spec(column = 1, width = "1.7cm") %>% 
+  column_spec(column = c(1:10), width = "1cm")
+
+```
+
+```{r, results = "asis", echo=FALSE, out.width = '60%', fig.align="center", fig.cap="Number of individuals in each trial arm colored by gender."}
+lf_dat_T <- lf_dat[lf_dat$Trial.arm == "Treatment",]
+lf_dat_C <- lf_dat[lf_dat$Trial.arm == "Control",]
+
+fig1_data <- data.frame(matrix(rep(0,12), nrow = 4))
+colnames(fig1_data) <- c("Trial","Gender", "Number")
+
+fig1_data[,3] <- c(table(lf_dat_T$Sex)["F"], table(lf_dat_C$Sex)["F"], 
+                   table(lf_dat_T$Sex)["M"], table(lf_dat_C$Sex)["M"])
+fig1_data[,2] <- c("F", "F", "M", "M")
+fig1_data[,1] <- c("Treatment", "Control", "Treatment", "Control")
+
+
+
+ggplot(fig1_data, aes(fill=Gender, y=Number, x=Trial)) + 
+  geom_bar(position='stack', stat='identity', alpha = 0.7) + 
+  xlab("Trial Arm")+
+  theme_minimal()
+
+```
+
+As can be seen above, the genders are not distributed evenly between control and trial group. The control group contains 85% female individuals, whereas the group recieving the compound consists of 75% male individuals. A group size of 3 or 5 in the stratified analysis might be too sensitive to outliers and too small to obtain reliable statistics. A more visual interpretation is given below.
+
+```{r, results = "asis", echo=FALSE, out.width = '75%', fig.align="center", fig.cap="Violin plot depicting the data points in the extended lung function data set."}
+fig2 <- lf_dat %>% mutate(Trial.arm = factor(Trial.arm, levels = c("Control", "Treatment"))) %>% 
+        ggplot(aes(fill = Sex, y= Lung.function, x = Trial.arm)) +
+        geom_violin(position="dodge", alpha=0.5) +
+        theme_minimal() + 
+        ylab("Lung function") +
+        xlab("Trial Arm") +
+  geom_point( shape = 21,size=2, position = position_jitterdodge( jitter.width = 0.2), color="black",alpha=1)
+  
+fig2 + coord_flip()
+```
+
+Due to the low number of individuals in two of the four subgroups, one has to be careful with interpretations. Though, it appeared like treatment had an effect on lung function in the first analysis, it now seems like the major difference is caused by gender of the study participants. More specifically, males appear to have a higher average lungfunction independent of treatment. As the control group has 85% females and the treatment group consists of 75% males, this might have caused the observed "improvement".
+\newpage
+
+To further investigate this, a two-sample *t*-test is conducted. Here we test for:
+
+$$H_0:\ \mu^{female}_{treatment} - \mu^{female}_{control} = 0$$
+
+```{r}
+lf_dat_M <- lf_dat[lf_dat$Sex == "M",]
+lf_dat_F <- lf_dat[lf_dat$Sex == "F",]
+
+t.test(lf_dat_F[lf_dat_F$Trial.arm == "Control",]$Lung.function,
+       lf_dat_F[lf_dat_F$Trial.arm == "Treatment",]$Lung.function,
+       alternative = "two.sided")$p.value
+```
+
+The analysis is then repeated for the male participants to test for a difference between treatment and control group.
+
+```{r}
+t.test(lf_dat_M[lf_dat_M$Trial.arm == "Control",]$Lung.function,
+       lf_dat_M[lf_dat_M$Trial.arm == "Treatment",]$Lung.function,
+       alternative = "two.sided")$p.value
+```
+
+For the female participants, a p-value of approximately 0.7 is returned. For the male participants, the *t*-test returns $p = 0.13$. Both of these do not indicate a rejection of the respective null hypothesis with a significance threshold of $\alpha = 0.05$. 
+
+Similar to what was mentioned in the lecture for kidney stone treatment and lung function data, a confounding factor is observed. The distribution of sexes between the compared groups is highly unbalanced. It might be that men have (on average) a better lung function. Since the "treatment" group contains proportionally more men than the "control" group, overall higher lung function is observed in the treatment group. The observed effect is diminished by repeating the analysis with accounting for the confounding factor sex. 
+
+# Task 7.2 - Confounders
+
+Data for $x_0$ and $y_0$ is generated by drawing from a normal distribution with $\mu = 0$ and $\sigma = 1$. A third vector $w$ of normally distributed data with $\mu_w = 0$ and $\sigma_w = 1$ is generated and added to 1. We can write this as $w_0 \sim \mathcal{N}(\mu_w,\sigma_w)$. It follows that $w = w_0 + 1$ with $w_0 + 1 \sim \mathcal{N}(\mu_w + 1,\sigma_w)$, therefore the random numbers in $w$ are equivalent to values drawn from a normal distribution with $\mu = 1$ and $\sigma = 1$. $w$ is added to $x_0$ to obtain the vector $x$ and subtracted from $y_0$ to obtain the vector $y$.
+
+```{r}
+set.seed(123)
+N <- 100000
+w <- 1 + rnorm(N)
+x_0 <- rnorm(N)
+y_0 <- rnorm(N)
+x <- x_0 + w
+y <- y_0 - w
+```
+
+```{r}
+h_x <- hist(x,breaks = 30, plot = FALSE)
+h_x_0<- hist(x_0,breaks = 30, plot = FALSE)
+
+h_y <- hist(y,breaks = 30, plot = FALSE)
+h_y_0<- hist(y_0,breaks = 30, plot = FALSE)
+
+par(mfrow = c(1,2))
+
+plot(h_x, col = alpha("red", alpha = 0.5), ylim = c(0,20000),
+     xlim = c(-8,8))
+plot(h_x_0, col = alpha("gray", alpha = 0.4), add = T)
+legend("topright", fill = c("red", "gray"), legend = c("x", "x_0"))
+
+plot(h_y, col = alpha("blue", alpha = 0.5), 
+     ylim = c(0,20000), xlim = c(-8,8))
+plot(h_y_0, col = alpha("gray", alpha = 0.4),
+     add = T)
+legend("topright", fill = c("blue", "gray"), legend = c("y", "y_0"))
+
+```
+As can be seen above, the mean of the normal distributions shifts in addition and subtraction. As we do not add/subtract a constant, but another random variable, the variance is affected as well.
+
+```{r}
+t.test(x,y)
+```
+
+The t-test shows a p-value below the significance level of $\alpha = 0.05$, subsequently the null hypothesis is rejected. As described above, adding a constant value to all samples effectively changes the mean. Here we do not add a constant, but another random variable, but "on average" it's mean is added. Therefore the mean of $x$ is shifted towards more positive values and the mean of $y$ towards more negative values. This results in a rejection of the Null hypothesis $H_0:\ \mu_{x} - \mu_{y} = 0$. At the same time, from the histograms we can observe that the resulting data is still approximately normally distributed. 
+
+The first case is a great example of how systematic error can result in false conclusions. If the calibration of machines differ and their outputs are compared, one might observe such a shift in means. Therefore, the null hypothesis might be rejected without any underlying true difference between samples. 
+
+```{r}
+
+w_p <- w*(2*rbinom(n= length(w), size=1, prob=0.5)-1)
+
+x_p <- x_0 + w_p
+y_p <- y_0 - w_p
+
+#par(mfrow = c(1,2))
+
+h_x_p <- hist(x_p,breaks = 30, plot = FALSE)
+h_x_0<- hist(x_0,breaks = 30, plot = FALSE)
+
+h_y_p <- hist(y_p,breaks = 30, plot = FALSE)
+h_y_0<- hist(y_0,breaks = 30, plot = FALSE)
+
+par(mfrow = c(1,2))
+
+plot(h_x_p, col = alpha("red", alpha = 0.5), 
+     ylim = c(0,20000), xlim = c(-8,8))
+plot(h_x_0, col = alpha("gray", alpha = 0.4), 
+     add = T)
+legend("topright", fill = c("red", "gray"), legend = c("x_p", "x_0"))
+
+plot(h_y_p, col = alpha("blue", alpha = 0.5), 
+     ylim = c(0,20000), xlim = c(-8,8))
+plot(h_y_0, col = alpha("gray", alpha = 0.4), 
+     add = T)
+legend("topright", fill = c("blue", "gray"), legend = c("y_p", "y_0"))
+
+```
+
+
+```{r}
+t.test(x_p,y_p)
+```
+
+Here we now add numbers with random sign to the entries of the vector. According to the law of large numbers, we would expect the mean of $w_p$ to approach zero for large sample sizes. It's values have been drawn from a standard normal distribution ($\mu = 0$) and the probabilities of the values being positive or negative are equal, therefore on average, we add zero to both vectors. Therefore the mean is not changed and the Null hypothesis $H_0:\ \mu_{x} - \mu_{y} = 0$ holds true. Subsequently a p-value above the significance level of $\alpha = 0.05$ is obtained. 
+
+At the same time we can observe from the histograms that this process broadens the distribution. The reason for this is that in $w_p$, we now basically overlay two distributions of smaller sample numbers with means -1 and 1, which results in a much broader range of values to which the vectors $y$ or $x$ are added.
+
+# Task 7.3 - Causal diagrams
+
+## Example 1: Kidney stone data
+
+In this lecture example, the size of a kidney stoned influenced the choice of treatment. The chosen treatment has an effect on the success rate of the therapy. Subsequently, the kidney stone size has an indirect effect on the success and therefore it makes sense to stratify by size in the analysis.
+
+TLDR: \newline
+Observable influences chosen treatment, treatment affects outcome \newline
+-> Stratification by observable makes sense
+
+```{r}
+library(igraph)
+par(mar = c(1,1,4,1))
+set.seed(12345)
+g3 <- graph( c("Size", "Treatment", "Treatment", "Success", "Size", "Success"))
+plot(g3, main = "Kidney stone causality", 
+     edge.arrow.size=0.8, vertex.color="lightblue", vertex.size=15, 
+     vertex.frame.color="black", vertex.label.color="black", 
+     vertex.label.cex=1, vertex.label.dist=3.5, edge.curved=0.1)
+
+```
+
+## Example 2: Blood pressure data
+
+In this second example, the same numbers as for the kidney stone example were investigated in the lecture. Though, the medical causality differs and therefore theapproach to analysis has to be adjusted. More specifically, here we can assume that a treatment changes the blood pressure of patients. A change in blood pressure then affects the recovery of patients. If we would stratify by the measured quantity (here: blood pressure, before: kidney stone size) as before, we would lose information about the effect of the treatment. A more suited way of recording the data might be, to measure the blood pressure before **and** after treatment to observe how blood pressure is changes by the drug. 
+
+TLDR: \newline
+Treatment affects observable, observable affects outcome \newline
+-> Stratification by observable does not make sense
+
+```{r}
+par(mar = c(1,1,4,1))
+set.seed(12345)
+g3 <- graph( c("Treatment", "Blood pressure", "Blood pressure", "Recovery"))
+plot(g3, main = "Blood pressure causality", 
+     edge.arrow.size=0.8, vertex.color="pink", vertex.size=15, 
+     vertex.frame.color="black", vertex.label.color="black", 
+     vertex.label.cex=1, vertex.label.dist=3, edge.curved=0.1)
+
+```
+
+
+
+
