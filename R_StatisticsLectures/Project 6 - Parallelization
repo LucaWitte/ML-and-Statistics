@@ -1,0 +1,374 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: '6: Programming - loops without loops'
+author: "Luca Witte"
+date: "3 November 2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 3, fig.width = 6)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse) # load for the functions used later
+seed_number <- 51628 # remember to use your personal seed
+```
+
+## Loop recap
+
+So far we've been repeating simulations in loops explicitly.  Let's take the example of Stats Exercises 1.2(b) where we sampled 10 mud balls and computed the sample variance, and repeated the whole process a large number of times
+
+```{r sample variances}
+n_reps <- 4001 # number of repetitions
+sample_variances <- rep(NA, n_reps) # create a vector to store the variances
+for (ii in 1:n_reps) {
+  mud_balls <- rbinom(10, 4, 0.5) - 2 # sample mud balls
+  sample_variances[ii] <- sum((mud_balls - mean(mud_balls))^2)/(length(mud_balls) - 1)
+}
+```
+
+and wanted to check if the variance was (on average) close to the theoretical value of 1 from the lectures
+
+```{r}
+mean(sample_variances)
+```
+
+
+## Loop replication
+
+We can replicate all this with the function `replicate` using the `var` function to compute the variance
+
+```{r}
+sample_variances <- replicate(n_reps, var(rbinom(10, 4, 0.5) - 2))
+mean(sample_variances)
+```
+
+What the code above has done is the same as the loop: for `n_reps` repetitions, it has sampled 10 times from the mud ball binomial, computed the sample variance, and stored all the results in a vector.
+
+*Exercise 1: Why are the means different between the `loop` and `replicate` versions?* 
+The seed was not set again -> RNG is different between the samples
+
+The function `replicate` actually calls a function called `sapply`.  We saw an example of `sapply` back in Programming 1 where we used it to apply a separate function to the elements of a vector
+
+```{r}
+FuzzyDuck <- function(x) {
+  if(x%%15 == 0){ # modular arithmetic
+    y <- "fuzzy duck"
+  } else if(x%%3 == 0){
+    y <- "fuzzy"
+  } else if(x%%5 == 0){
+    y <- "duck"
+  } else {
+    y <- x
+  }
+  return(y)
+}
+sapply(1:20, FuzzyDuck)
+```
+
+`sapply` ran the function on each element of the vector, and returned a vector of the results.  Following this pattern, we could define a function which returns a sample variance from the mud ball binomial
+
+```{r}
+MudBallSampleVariance <- function(.) {
+  var(rbinom(10, 4, 0.5) - 2)
+}
+sample_variances <- sapply(1:n_reps, MudBallSampleVariance)
+mean(sample_variances)
+```
+
+One slightly odd thing is that the function has no argument.  If it is left blank and we type `function()`, then `sapply` will throw an error.  Instead we can put a `.` in and write `function(.)` to make `sapply` happy, or we could use a dummy variable which is not used later and write `function(x)`.
+
+We can also define the function locally in `sapply` with the following syntax
+
+```{r}
+sample_variances <- sapply(1:n_reps, function(.) var(rbinom(10, 4, 0.5) - 2))
+mean(sample_variances)
+```
+
+*Exercise 2: Write a function to sample 10 mud balls, and return the value of the biased variance estimate from Stats Exercise 1.2(c)*
+
+```{r}
+MudBallSampleBiasedVar <- function(.) {
+  mudball_sample <- rbinom(10, 4, 0.5) - 2
+  return(sum((mudball_sample - mean(mudball_sample))^2)/(length(mudball_sample)))
+}
+sample_BiasedVar <- sapply(1:10, MudBallSampleBiasedVar)
+```
+
+*CODE Exercise 1: Set your seed and use `replicate` or `sapply` to obtain a vector of `n_reps` biased variance estimates.  What is the digit in the fourth decimal place of their mean?*
+
+```{r}
+set.seed(seed_number)
+Code_vec <- rep(NA,6)
+
+# Function from programming sheet 1:
+ExtractDecimalPlace <- function(x, n) {
+  x <- abs(x)
+  floor(10*(x*10^(n-1) - floor(x*10^(n-1))))
+}
+
+sapply(1:n_reps, MudBallSampleBiasedVar) %>% mean %>% 
+  {ExtractDecimalPlace(.,4)} -> Code_vec[1]
+
+```
+
+
+## Purrring
+
+In the `tidyverse`, and specifically in the `purrr` package, we have the `map` family of functions.  Using `map` however returns a list (tha analogue in base `R` is actually `lapply`), which we don't particularly want. We can however specify that `map` returns a vector by using `map_lgl`, `map_chr`, `map_int` or `map_dbl` to return logical, character, integer or numeric vectors respectively.  With this in mind, we can use `map_dbl` with the same syntax as `sapply` above
+
+```{r}
+sample_variances <- map_dbl(1:n_reps, function(.) var(rbinom(10, 4, 0.5) - 2))
+mean(sample_variances)
+```
+
+As a side note, we can avoid the complication of specifying the output by choosing the variant of `map_` by using the `modify` function instead.  This returns a vector with the same type as the input.  In our case to get a numeric output, we need to recast the integer `1:nreps` to numeric using `as.numeric` or `as.double` or tricking it by mutlipying by a `numeric` value like `1.0`! 
+
+```{r}
+sample_variances <- modify(as.numeric(1:n_reps), function(.) var(rbinom(10, 4, 0.5) - 2))
+sample_variances <- modify(as.double(1:n_reps), function(.) var(rbinom(10, 4, 0.5) - 2))
+sample_variances <- modify(1.0*1:n_reps, function(.) var(rbinom(10, 4, 0.5) - 2))
+mean(sample_variances)
+```
+
+
+## Generating data frames
+
+For the example so far, `map` doesn't seem particularly helpful. But the `map` variant `map_df` allows us to create a data frame from our simulations:
+
+```{r}
+set.seed(seed_number) # use your personal seed
+mud_ball_statistics <- map_df(1:n_reps, function(.) { # bracket for multi-line function
+  mud_balls <- rbinom(10, 4, 0.5) - 2
+  var_1 <- sum((mud_balls - mean(mud_balls))^2)/(length(mud_balls) - 1)
+  var_2 <- sum((mud_balls - mean(mud_balls))^2)/(length(mud_balls))
+  sd_1 <- sqrt(var_1)
+  sd_2 <- sqrt(var_2)
+  data.frame("var_1" = var_1, "var_2" = var_2, "sd_1" = sd_1, "sd_2" = sd_2)
+}) # end function with } and map_df with )
+```
+
+*Exercise 3: Examine the code above and its output to make sure you understand what has happened.  Compute the mean of each column.*
+
+```{r}
+mean_Ex3 <- apply(mud_ball_statistics,2,mean)
+```
+
+*CODE Exercise 2: What digit is in the fourth decimal place of the column mean furthest from 1?*
+
+```{r}
+# Function from exercise 1:
+ExtractDecimalPlace <- function(x, n) {
+  x <- abs(x)
+  floor(10*(x*10^(n-1) - floor(x*10^(n-1))))
+}
+
+Index <- which(abs(mean_Ex3-1) == max(abs(mean_Ex3-1)))
+
+Code_vec[2] <- ExtractDecimalPlace(mean_Ex3[Index],4)
+```
+
+The code in the previous chunk has recreated Stats Exercise 1.2, but in a reasonably compact form.  You may have noticed however, that it is rather slow.  This is because at each repetition we make a data frame with a single row which `purrr` then appends to create the complete data frame over all repetitions.
+
+As an aside, there are actually two subforms to `map_df`: `map_dfr` and `map_dfc` which respectively perform row or column binding of the dataframes inside each repetition.
+
+Despite its slowness, the code in the chunk above has the nice property that both types of variance estimates are evaluated on the same sample in each repetition.  This gives us less noise when we compare the two variances than if we had computed them on two distinct sets of samples each time.
+
+*Exercise 4: In the code in the previous chunk we estimated the variance by dividing by $(N-1)$ and by dividing by $N$, where $N$ is the number of samples (each repetition). Reuse the code from the previous chunk, but add a third variance estimator where we divide by $\left(N-\frac{3}{2}\right)$.  Also include its square root as a third standard deviation.*
+
+$$\left(N-\frac{3}{2}\right)$$
+
+```{r}
+# Code copied and modified from above!
+
+set.seed(seed_number) # use your personal seed
+mud_ball_statistics_4 <- map_df(1:n_reps, function(.) { # bracket for multi-line function
+  mud_balls <- rbinom(10, 4, 0.5) - 2
+  var_1 <- sum((mud_balls - mean(mud_balls))^2)/(length(mud_balls) - 1)
+  var_2 <- sum((mud_balls - mean(mud_balls))^2)/(length(mud_balls))
+  var_3 <- sum((mud_balls - mean(mud_balls))^2)/(length(mud_balls) - (3/2))
+
+  sd_1 <- sqrt(var_1)
+  sd_2 <- sqrt(var_2)
+  sd_3 <- sqrt(var_3)
+
+  data.frame("var_1" = var_1, "var_2" = var_2, "var_3" = var_3, "sd_1" = sd_1, "sd_2" = sd_2, "sd_3" = sd_3)
+}) # end function with } and map_df with )
+```
+
+
+*CODE Exercise 3: What is the digit in the fourth decimal place of the mean of the third variance estimate across all repetitions.*
+
+```{r}
+mean_Ex4 <- apply(mud_ball_statistics_4,2,mean)
+Code_vec[3] <- ExtractDecimalPlace(mean_Ex4["var_3"], 4)
+
+```
+
+
+## Column wise
+
+Building the data frame row wise is quite slow, but in the previous exercises we actually divided the same sum by different factors.  We could rebuild the data frame column wise by first sampling the sum for each repetition (using `map` for example) and then creating all the other columns using `mutate`:
+
+```{r}
+set.seed(seed_number) # use your personal seed
+n_balls <- 10
+mud_ball_stats_colwise <- data.frame(repetition = 1:n_reps) %>% 
+  mutate(sum_squares = map_dbl(repetition, function(.) { 
+    mud_balls <- rbinom(n_balls, 4, 0.5) - 2 # sample mud balls
+    sum((mud_balls - mean(mud_balls))^2) # compute sum of squares (minus mean)
+  }), # end of map_dbl, now we create the other columns within mutate
+    var_1 = sum_squares/(n_balls - 1), var_2 = sum_squares/n_balls,
+    sd_1 = sqrt(var_1), sd_2 = sqrt(var_2)
+  ) # end of mutate
+```
+
+*Exercise 5: Read through the code above, and follow what it does. Add in the third estimate of the variance [divided by $\left(N-\frac{3}{2}\right)$] and the corresponding standard deviation.  Check that the appropriate columns exactly match the corresponding columns in your data frame from Exercise 4.*
+
+```{r}
+#code copied and modified from above
+
+set.seed(seed_number) # use your personal seed
+n_balls <- 10
+mud_ball_stats_colwise <- data.frame(repetition = 1:n_reps) %>% 
+  mutate(sum_squares = map_dbl(repetition, function(.) { 
+    mud_balls <- rbinom(n_balls, 4, 0.5) - 2 # sample mud balls
+    sum((mud_balls - mean(mud_balls))^2) # compute sum of squares (minus mean)
+  }), # end of map_dbl, now we create the other columns within mutate
+    var_1 = sum_squares/(n_balls - 1), var_2 = sum_squares/n_balls, 
+      var_3 = sum_squares/(n_balls - (3/2)),
+    sd_1 = sqrt(var_1), sd_2 = sqrt(var_2), sd_3 = sqrt(var_3)
+  ) # end of mutate
+
+table(mud_ball_stats_colwise$var_3 == mud_ball_statistics$var_3)
+table(mud_ball_stats_colwise$sd_3 == mud_ball_statistics$sd_3)
+
+```
+*CODE Exercise 4: What is the digit in the fourth decimal place of the mean of the variance or sd estimate across all repetitions that is closest to 1.*
+
+```{r}
+mean_Ex5 <- apply(mud_ball_statistics,2,mean)
+Code_vec[4] <- ExtractDecimalPlace(min(abs(mean_Ex5-1)), 4)
+
+```
+
+
+## Loops of loops
+
+Although not the fastest, the `map_df` function allows us to nest loops in a more compact way.  Compare the following to the loops from Programming Workbook 2, Exercise 3: 
+
+```{r}
+n_reps <- 400
+sample_sizes <- c(10, 20, 40) # the possible sample sizes
+distribs <- c("Uniform", "Binomial") # the range of distributions
+map_loop_df <- 
+map_df(sample_sizes, function(s_size)
+  map_df(distribs, function(distrib)
+    map_df(1:n_reps, function(.) { 
+      if (distrib == "Uniform") { 
+        local_sample <- 4*runif(s_size)
+      }
+      if (distrib == "Binomial") { 
+        local_sample <- rbinom(s_size, 4, 0.5)
+      }
+      data.frame(distribution = distrib, sample_size = s_size,
+           sample_means = mean(local_sample), sample_variances = var(local_sample),
+           stringsAsFactors = FALSE) # this option keeps the strings as strings
+    }) # repetition loop end
+  ) # distribution loop end
+) # sample size loop end
+```
+
+*Exercise 6: Add an additional, third distribution: a Gaussian with mean 2 and sd 1.*
+
+
+## Power calculation
+
+For the last part of this workbook, we are going to use simulation to estimate the power of a test of difference between two groups.  We will assume that the data are normally distributed, with sd of 1 and a true effect size of 1.  For the "control" group we use a normal with mean 0 and sd 1, while for the "treatment" group we use a normal with mean 1 and sd 1.
+
+*Exercise 7: Compute the power of a $t$-test for sample sizes of `c(10, 20, 40)` in each group (using `strict = TRUE`).*
+
+```{r}
+power_vec <- c()
+alpha <- 0.05
+sigma <- 1
+delta <- 1
+
+for(sam in sample_sizes){
+  dat_contr <- rnorm(n = sam, mean = 0, sd = 1)
+  dat_treat <- rnorm(n = sam, mean = 1, sd = 1)
+  power_vec <- c(power_vec, power.t.test(n = sam, delta = delta, sd = sigma, 
+                                         sig.level = alpha, power = NULL,
+type = "two.sample", strict = TRUE)$power)
+}
+```
+
+
+*CODE Exercise 5: What is the digit in the fourth decimal place of the lowest power from Exercise 7?*
+
+```{r}
+Code_vec[5] <- ExtractDecimalPlace(min(power_vec),4)
+```
+
+Now we are going to add an outlier to the "control" group, by replacing the last sample (the sample at the end of the sampled vector) with a fixed value of 5.
+
+*Exercise 8: Have an outside loop over the sample size $N \in \{10, 20, 40\}$. For each sample size, over 1000 repetitions, sample from a normal with mean 0 and then from a second normal with mean 1 (sd of 1 in both cases).  Replace the last sample (which is the $N$-th sample) of the first (control) normal by 5.  Run both a $t$-test and a Wilcoxon test and record whether each result is "significant".*
+
+```{r}
+t_vec <- c()
+wc_vec <- c()
+alpha <- 0.05
+sigma <- 1
+delta <- 1
+
+for(sam in sample_sizes){
+  num_reject_t <- 0
+  num_reject_wc <- 0
+
+  for(i in c(1:1000)){
+    dat_contr <- rnorm(n = sam, mean = 0, sd = 1)
+    dat_contr[sam] <- 5
+    dat_treat <- rnorm(n = sam, mean = 1, sd = 1)
+    
+    t_test_p <- t.test(dat_contr, dat_treat)$p.value
+    if(t_test_p < alpha){
+      num_reject_t <- num_reject_t + 1
+      }
+    wc_test_p <- wilcox.test(dat_contr, dat_treat)$p.value
+    if(wc_test_p < alpha){
+      num_reject_wc <- num_reject_wc + 1
+      }
+  }
+  t_vec <- c(t_vec, num_reject_t)
+  wc_vec <- c(wc_vec, num_reject_t)
+}
+
+
+```
+*Exercise 9: Compute the empirical power for each sample size, and compare to the $t$-test above*
+
+```{r}
+emp_t_test <- t_vec/1000
+emp_wc_test <- wc_vec/1000
+
+```
+
+
+*CODE Exercise 6: What is the digit in the fourth decimal place of the highest empirical power from Exercise 9?*
+
+```{r}
+Code_vec[6] <- ExtractDecimalPlace(max(c(emp_t_test, emp_wc_test)),4)
+```
+
+## CODE concatenation
+
+*FINAL CODEWORD: Combine your answers to CODE Exercises `c(1:6)` into a single string with underscores separating the individual answers. Upload this codeword, without speech marks.*
+
+```{r}
+paste(as.character(Code_vec), collapse="_") # Code copied from exercise 1
+```
+
