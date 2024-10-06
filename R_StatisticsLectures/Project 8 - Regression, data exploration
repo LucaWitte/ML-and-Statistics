@@ -1,0 +1,189 @@
+---
+title: "isar Exercise sheet 7"
+author: "Luca Witte"
+date: "2022-11-13"
+output: pdf_document
+
+header-includes:
+  \usepackage[labelfont = bf, font =  {small, sf},
+  singlelinecheck=true, margin=22pt]{caption}
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library("HistData")
+```
+
+# Task 8.1 - Eating chocolate is good for you
+
+```{r, out.width = '60%', fig.align="center"}
+choc_dat <- read.csv("./data/chocolate.csv")
+colnames(choc_dat) <- c("Country","NP_scaled", "Consum_scaled")
+plot(x = choc_dat[,"Consum_scaled"], y = choc_dat[,"NP_scaled"],
+     xlab = "Per capita chocolate consumption in kg",
+     ylab = "Nobel prizes per 10 million capita",
+     main = "Chocolate data - Scatterplot")
+
+```
+The given data set contains information about chocolate consumption and nobel prices per capita in 22 countries. The hypothesis we want to investigate is, whether chocolate consumption might have an effect on frequency of awarded nobel prices. Therefore, the independent variable is the per capita chocolate consumption in kg. The dependent variable is the number of Nobel prizes per 10 million capita. We can further investigate this, by fitting a linear regression to the data:
+
+```{r}
+task1_fit <- lm(choc_dat[,"NP_scaled"] ~ choc_dat[,"Consum_scaled"])
+summary(task1_fit)$coefficients
+summary(task1_fit)
+
+```
+The *lm*-function in R returns a fit with an $R^2$-value of 0.51. It predicts an intercept of -3.1 and a slope of 2.9. The fit model can be visualized as follows:
+
+First the fit is visualized manually:
+
+```{r, out.width = '60%', fig.align="center"}
+plot(x = choc_dat[,"Consum_scaled"], y = choc_dat[,"NP_scaled"],
+     xlab = "Per capita chocolate consumption in kg",
+     ylab = "Nobel prizes per 10 million capita",
+     main = "Chocolate data - Fit using abline",
+     ylim = c(-10,30))
+abline(a = -3, b = 2.9)
+```
+
+Alternatively, *geom_smooth* from the *ggplot2* package can be used:
+
+```{r, out.width = '60%', fig.align="center"}
+ggplot(choc_dat, aes(x = Consum_scaled, y = NP_scaled)) +
+  geom_point(size = 2) + 
+  geom_smooth(method = lm) +
+  theme_bw() +
+  xlab("Per capita chocolate consumption in kg") +
+  ylab("Nobel prizes per 10 million capita") + 
+  ggtitle("Chocolate data - Fit using geom_smooth")
+
+```
+
+To investigate the model assumptions, we plot the residuals of the fit:
+
+```{r, out.width = '60%', fig.align="center"}
+ggplot(task1_fit, aes(x = .fitted, y = .resid)) +
+  geom_point(size = 2) +
+  xlab(expression(hat(y))) + ylab(expression(epsilon)) + 
+  theme_bw()
+```
+While the number of points is relatively low and therefore interpretations should be treated with care, it seems that variance is increasing along the horizontal axis. This might be a result from the higher number of data points with chocolate consumption above 4 kg. 
+
+To further investigate the underlying distribution, we can plot a histogram and a q-q-plot:
+
+```{r, out.width = '60%', fig.align="center"}
+ggplot(task1_fit, aes(x = .fitted, y = ..density..)) +
+  theme_bw() + xlab(expression(epsilon)) +
+  geom_histogram(binwidth = 1.5)
+```
+
+```{r, out.width = '60%', fig.align="center"}
+qqnorm(task1_fit$residuals, cex.lab = 1.25, pch = 19)
+qqline(task1_fit$residuals, col = "gray", lwd = 2)
+```
+From the histogram, it is hard to tell which distribution is underlying the data. Again, a higher number of data points would result in better interpretability. From the q-q-plot, we can observe some fluctuations in the middle and an increase on the right side. From the available information, it seems like there is a certain degree of non-normality in the data, indicating that the model-assumptions are not perfectly fulfilled. This can be expected to have an effect on the calibration of p-values in fitting the slope. Though, by eye the fit appears to not deviate from the data, indicating that the degree of non-normality is not too high. 
+
+# Task 8.2 - four data sets
+
+## 8.2.A means, standard deviations and correlations
+```{r}
+four_dat <- read.csv("./data/four_datasets.csv")
+colnames(four_dat)[1] <- "dataset"
+
+four_dat %>% group_by(dataset) %>% summarize(
+            min_x = min(x),
+            max_x = max(x),
+            Mean_x = mean(x),
+            SD_x = sd(x),
+            Mean_y = mean(y),
+            SD_y = sd(y),
+            Rho = cor(x = x, y = y))
+
+```
+
+All four groups have the same mean and standard deviation in both x and y and a highly similar correlation (Rho).  
+
+## 8.2.B linear regression
+
+```{r, out.width = '100%', fig.align="center"}
+set_names <- c("A","B","C","D")
+
+par(mfrow = c(2,2), mar = c(4,4,3,2))
+
+for(i in c(1:4)){
+  set <- four_dat[four_dat[,1] == set_names[i],]
+  lm_fit <- lm(y ~ x, set)
+  plot(x = set$x, y = set$y,
+       main = paste0("Group = ", set_names[i]),
+       ylab = "y", xlab = "x", pch = 19, cex = 0.7,
+       col = i, xlim = c(4,20), ylim = c(4,13))    
+  abline(a= lm_fit$coefficients[[1]], b = lm_fit$coefficients[[2]],
+         col = i)
+}
+```
+## 8.2.C Discussion
+
+This is a famous data collection called Anscombe's quartet. It contains four data sets, that share descriptive statistics. As can be seen in the output above, all four groups have the same mean, standard deviation and correlation. The linear regressions fit to all four data sets share the same intercept and slope. By looking at the scatter plots, it is clear that the nature of the data varies tremendously between the groups. 
+
+Group A could stem from a true linear relationship with approximately normally distributed noise. A non-linear relation can be observed for group B. Group C appears to be a perfect linear relation with one outlier. It is clear to see that the slope of the linear relation without being offset by the outlier would differ from the obtained slope. Group D shows that most points do not indicate a relationship between x and y. A single outlier is enough to generate the (relatively high) Rho of 0.8.
+
+This shows that a realistic interpretation of obtained data is necessary to make sense of descriptive statistics. Data sets sharing statistic metrics might still look entirely different from each other and contain different ground truths. Further, a good linear regression does not necessarily imply a linear relationship in the data. Like in the task, data should always be visualized and inspected when working with it, to identify deviations between statistic and real-world behavior. 
+
+This need for visualization can be an issue with high-dimensional data, for which visualization (e.g. via dimensionality reduction) often leads to a loss of information. In the simple case of a linear regression, Anscombe's quartet is an impressive example, showing that relying on metrics alone is often not enough. Investigating the data and the underlying behavior is often necessary to understand the observed relationships.
+
+# Task 8.3 - Regression to the mean
+
+```{r}
+family_data <- GaltonFamilies
+# We are only interested in sons (gender == male)
+family_filtered <- family_data[family_data$gender == "male",]
+
+ggplot(family_filtered, aes(x = father, y = childHeight)) +
+  geom_point(size = 1) + 
+  geom_smooth(method = lm) +
+  theme_bw() +
+  xlab("Height of father") +
+  ylab("Height of son") + 
+  ggtitle("Linear regression to GaltonFamilies data set (Subtask 1)")
+
+lm_fit <- lm(childHeight ~ father, family_filtered)
+lm_fit
+```
+
+From the linear fit, it can be seen that larger fathers tend to have slightly smaller sons and smaller fathers tend to have slightly larger sons. Galton observed this relationship, as only a fraction of the fathers deviation from the mean is inherited. In other words, "regression to the mean" implies that when the value of a variable is extreme, the subsequent sampling will most likely be closer to the expected value. Due to genetic factors, there might still be a predisposition to a similar height as the parent, but the metric will approach the population mean over generations.
+
+```{r}
+
+ggplot(family_filtered, aes(x = childHeight, y = father)) +
+  geom_point(size = 1) + 
+  geom_smooth(method = lm) +
+  theme_bw() +
+  ylab("Height of father") +
+  xlab("Height of son") + 
+  ggtitle("Linear regression to GaltonFamilies data set (Subtask 3)") 
+
+lm_fit <- lm(father ~ childHeight, family_filtered)
+lm_fit
+```
+
+
+By swapping the axes, we now minimize the residuals to the data points reflecting the height of fathers instead of the sons. Contrary to the example from the lecture, in this task the coefficients of the linear regression change, as the data has not been standardized previously. In standardized space, the regression remains the same. 
+
+```{r}
+
+plot(x = family_filtered$father, y = family_filtered$childHeight,
+     pch = 19, cex = 0.5,
+     xlab = "Height of father", ylab = "Height of son")
+abline(a = 38.3626, b = 0.4465, col = "red")
+abline(a = 45.2651, b = 0.3448, col = "darkblue")
+abline(a = 0, b = 1, col = "black", lwd = 2)
+legend("bottomright", col = c("red", "darkblue", "black"), 
+       legend = c("Subtask 1", "Subtask 3", "x = y"), lty = 1)
+
+```
+With this plot, we can observe, for which values the height of fathers and sons deviate. Comparing to the slope of the black curve shows, that the data from subtask 1 indeed indicates a regression to the mean. For smaller fathers, the fit shows on average larger sons than expected from the perfect correlation. For larger fathers the opposite is true, they tend to have on average smaller sons. The point of the linear regressions crossing the black line indicates the mean to which the observation regresses. If no regression to the mean was observed, both fits from subtasks 1 and 3 (red and blue) would be oberlayed in this plot.  
+
+
+
