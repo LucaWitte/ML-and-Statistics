@@ -1,0 +1,235 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: 'Exercise 1'
+author: "Luca Witte"
+date: "2022-09-30"
+output: pdf_document
+
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exercise 1.1
+
+## subtask (a)
+
+A Bernoulli random variable is a variable that can only take the values 1 or 0 ($\Omega = \{0, 1\}$). These are linked to a probability $p$:
+$$P(x=1)=p$$
+From this follows that:
+
+$$P(x=0) = 1-p$$
+Using the definition of the mean, we can insert the two possible outcomes and derive the expected value (mean) for a Bernoulli random variable:
+
+$$
+\begin{aligned}
+&\mu = \sum_{x \in \Omega} x * P(x) = 1p + 0(1-p) \\
+&\mu = p
+\end{aligned}
+$$
+The variance is defined as:
+
+$$\sigma^2 = E[(x-\mu)^2] = \sum_{x \in \Omega} (x - \mu)^2 P(x)$$
+Inserting the two possible outcomes yields the formula for the variance of a Bernoulli random variable:
+$$
+\begin{aligned}
+&\sigma^2 = (1-p)^2p + (0-p)^2(1-p) \\
+& \quad= (1-2p+p^2)p + (p^2)(1-p) \\
+& \quad = p -2p^2 + p^3 + p^2-p^3 \\
+& \quad= p - p^2 = p(1-p)
+\end{aligned}
+$$
+
+## subtask (b)
+
+```{r}
+Prob <- 0.3
+out_1b <- rbinom(size=1, n=100000, p = Prob)
+
+(mean_1b_sample <- mean(out_1b))
+(mean_1b_anal <- Prob)
+
+(var_1b_sample <- var(out_1b))
+(var_1b_anal <- Prob * (1-Prob))
+
+
+```
+We see, that the sample of 100000 random variables has approximately the same mean and variance (less than 1% deviation for seed 51628) that we predict using the analytical solution. The high accuracy is explained by the large sample number ($n = 100000$). According to the law of large numbers, statistical measures converge to their theoretical value with increasing sample size.
+
+## subtask (c)
+
+We now calculate the mean and variance for a Binomial variable, referring to an increased number of Bernoulli trials ($n$) for each sample. As the probabilities remain the same in each trial, we obtain for the mean:
+
+$$\mu = pn$$
+And for the variance:
+
+$$\sigma^2 = np(1-p)$$
+
+```{r}
+Prob <- 0.3
+trials <- 10
+out_1c <- rbinom(size=trials, n=100000, p = Prob)
+
+(mean_1c_sample <- mean(out_1c))
+(mean_1c_anal <- Prob*trials)
+
+(var_1c_sample <- var(out_1c))
+(var_1c_anal <- trials * Prob * (1-Prob))
+
+```
+We can observe that for the large number of 100000 samples, both mean and variance approach the value predicted by the analytically derived solution. As mentioned before, this can be explained by the law of large numbers, as statistical measures converge to the theoretical values for larger sample sizes.
+
+## subtask (d)
+
+```{r}
+par(mfrow = c(2,3))
+for (i in round(c(10^(seq(1,4, length.out = 6))))){
+  trials <- i
+  Prob <- 0.3
+  x_vec <- 0:trials
+  
+  out_1d <- dbinom(size=trials, x = x_vec, p = Prob)
+  
+  plot(out_1d, xlab = "Outcome", ylab = "Probability", cex = 0.5)
+  title(paste("Number of trials =", i))
+}
+
+```
+The plots above depict Binomial distributions for different numbers of trials. From these plots, we can observe that with an increased number of trials, the expected value increases. The extreme margins of the distribution widen (more extreme values are possible, though not likely). This gives the impression that the distribution becomes narrower, which is not the case when the standard deviations or the x-axes are investigated.
+
+## subtask (e)
+
+```{r}
+par(mfrow = c(2,3))
+for (i in round(c(10^(seq(1,4, length.out = 6))))){
+  trials <- i
+  Prob <- 0.3
+  x_vec <- 0:trials
+  
+  mean_1e <- Prob*trials
+  variance_1e <- trials * Prob * (1-Prob)
+  
+  out_1e_binom <- dbinom(size=trials, x = x_vec, p = Prob)
+  out_1e_norm <- dnorm(mean = mean_1e, sd = sqrt(variance_1e), x = x_vec)
+  
+  plot(out_1e_binom, xlab = "Outcome", ylab = "Probability",col="black", cex = 0.6)
+  lines(out_1e_norm, col = "red", lty= 2)
+  title(paste("Number of trials =", i))
+}
+
+```
+In the plot above, the Binomial distribution is represented by dots and the Normal distribution with the same mean and standard deviation is plotted as red, dotted line. It is clear that the Normal distribution and the Binomial distribution are almost equal. A difference is observed for the first plot (n=10), where the probability for an outcome of 3 is higher than for an outcome of 5 in the Binomial distribution. This is in accordance with the commonly used simplification that a Binomial distribution is shaped symmetrically when n is large. Further, it is perfectly symmetric when p = 0.5 (not the case here). We observe that this asymmetry is lost with the higher number of trials. In accordance with what was discussed in the lecture, the repeated sampling of Bernoulli random variables approaches the Gaussian distribution for large n. 
+
+# Exercise 1.2
+
+## subtask (a)
+
+10 random events ("mudballs") are simulated using the function *rbinom*. The variance is calculated using:
+$$\sigma^2 = \frac{1}{N-1} \sum (x_i - \overline{x})^2$$
+
+```{r}
+N <- 10
+out_2a <- rbinom(size=4, n=10, p =c(0.5,0.5))-2
+(out <- sum((out_2a - mean(out_2a))^2) * 1/(N-1))
+
+```
+By setting $N$ to 10 and applying the equation above, we obtain the sample variance. 
+
+As we know that the true variance should be 1, the obtained value is reasonable in size, but deviates from the true value. For the seed 51628, the sample variance deviates 66% from the true variance, which can be explained by the relatively small sample size. For increasing sample sizes, it is reasonable to expect that the variance approaches the theoretical value.
+
+
+## subtask (b)
+
+The process from 1.2(a) is repeated 10000 times and the average of the sample variances is calculated.
+
+```{r}
+Var_vec <- rep(0,10000)
+N <- 10
+
+for (i in c(1:10000)){
+  out_2b <- rbinom(size=4, n=10, p =c(0.5,0.5))-2
+  Var_vec[i] <- sum((out_2b - mean(out_2b))^2) * 1/(N-1)
+}
+
+(out <- mean(Var_vec))
+
+```
+We observe that the average of variances from a high number of repeats approaches the true value of the variance for the given distribution. In the lecture, we discussed that increasing the number of mudballs would change the shape of the distribution therefore its standard deviation. Instead, having $n = const.$ and increasing the number of repeats maintains the distribution but averages out fluctuations that occur in each separate repeat. This is in accordance with the law of large numbers.
+
+## subtask (c)
+The procedure from subtask (b) is repeated, but now an estimator for the variance is used:
+$$\sigma^2 \approx \frac{1}{N} \sum (x_i - \overline{x})^2$$
+This formula uses the mean of the squared deviations from the sample means. It therefore contains one additional degree of freedom. The previous formula (see 1.2(b)) is referred to as an unbiased estimator.
+
+```{r}
+Est_vec <- rep(0,10000)
+N <- 10
+
+for (i in c(1:10000)){
+  out_2c <- rbinom(size=4, n=10, p = 0.5)-2
+  mean_2c <- mean(out_2c) 
+  sqdev_2c <- (out_2c - mean_2c)^2
+  Est_vec[i] <- sum(sqdev_2c) * 1/(N)
+}
+
+(out <- mean(Est_vec))
+
+```
+When repeatedly running the code above, an average variance of approximately 0.9 is obtained consistently. This shows that the calculation is reproducible, but the formula systematically underestimates the variance. This seams reasonable, considering that the term $\frac{1}{N}$ replaces $\frac{1}{N-1}$. 
+
+We observe that the average of variances from a high number of repeats approaches the true value of the variance for the given distribution. In the lecture, we discussed that increasing the number of mudballs would change the shape of the distribution and therefore also its variance. By increasing the number of repeats fluctuations between repeats average out according to the law of large numbers. The example above shows that this law does not correct false calculations. While it averages out random fluctuations, a wrong average is obtained when the used formula is inaccurate.
+
+## subtask (d)
+
+Here we look at the standard deviation of both approaches (variance and estimator).
+
+```{r}
+
+Var_vec <- rep(0,10000)
+Est_vec <- rep(0,10000)
+
+for (i in c(1:10000)){
+  out_2d <- rbinom(size=4, n=10, p = 0.5)-2
+  mean_2d <- mean(out_2d) 
+  sqdev_2d <- (out_2d - mean_2d)^2
+    
+  Var_vec[i] <- sum(sqdev_2d) * 1/(N-1)
+  Est_vec[i] <- sum(sqdev_2d) * 1/(N)
+}
+
+out1 <- sqrt(mean(Var_vec)) #Calculating sample variance and taking root
+out2 <- sqrt(mean(Est_vec)) #Estimating sample variance and taking root
+
+paste("square root of average from sample variances =", round(out1,5))
+paste("square root of average from sample variance estimates =", round(out2,5))
+
+
+Var_vec_root <- sqrt(Var_vec)
+Est_vec_root <- sqrt(Est_vec)
+
+out3 <- mean(Var_vec_root) #Calculating average of standard deviations
+out4 <- mean(Est_vec_root) #Calculating average of roots of estimates
+
+paste("average of standard deviations from samples =", round(out3,5))
+paste("average of the square roots of the individual variance estimates =", round(out4,5))
+
+
+```
+We observe for the first two solutions that the square root of the sample variance is very close to the true standard deviation. By using the estimate, we deviate again from the true value as explained above.
+
+The last two values are obtained by calculating the standard deviation for each sample of 10 balls and then averaging over these. The values tend to be further from the true standard deviation. Again, the results from the estimates are less accurate than the ones obtained using the correct formula.
+
+These different approaches were not discussed in detail in the lecture, but in accordance to what has been discussed above, it seems reasonable that the values obtained based on the estimate $\sigma^2 \approx \frac{1}{N} \sum (x_i - \overline{x})^2$ deviate more from the true standard deviation, as the estimate deviates from the true variance. 
+
+## subtask (e)
+
+The bias describes the deviation of the sample value from the true value. 
+
+The variance describes the deviation of the sample values from the expected value. It can be used to define a range in which a random sample lies with a certain probability. This is achieved using the square root of the variance (standard deviation).  
+
+A commonly used analogy is shooting at a target. If multiple shots (= samples) hit the middle of the target, there is low bias *and* low variance. High variance would indicate that the hits are spread around the center of the target. The samples are not systematically deviating from the true value (target center) and therefore have low bias, but have a higher deviation from the expected value. High bias could describe a scenario where the hits are still very much focused on one spot (indicating low variance), but have a distance to the true value (target center).
+
+
+
+
+
