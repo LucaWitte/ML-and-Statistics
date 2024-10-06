@@ -1,0 +1,325 @@
+---
+title: "isar - Exercise sheet 6"
+author: "Luca Witte"
+date: "2022-11-04"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("tidyverse")
+```
+
+## Task 6.1 - gene correction
+
+### Lung squamous cell carcinoma
+
+In this task, a dataset containing information about lung squamous cell carcinoma is analyzed. It containes information on over 18000 mutations with associated genes in ranked order with p-values correlating them to squamous cell lung cancer. First the data is loaded and necessary information for later analysis are appended:
+
+```{r}
+url <- paste0("https://gdac.broadinstitute.org",
+"/runs/analyses__2016_01_28/reports/cancer/",
+"LUSC-TP/MutSigNozzleReport2CV/sig_genes.txt")
+#lung_cancer_df <- read_tsv(url) #throws error when website is down -> document not compiled
+# Data saved & reloaded from workspace:
+# write.csv(x = lung_cancer_df, file =  "./data/lung_cancer_df.csv")
+lung_cancer_df <- read.csv("./data/lung_cancer_df.csv")
+lung_cancer_df$p_bonferroni <- p.adjust(lung_cancer_df$p, method = "bonferroni")
+lung_cancer_df$p_holm <- p.adjust(lung_cancer_df$p, method = "holm")
+lung_cancer_df$p_BH <- p.adjust(lung_cancer_df$p, method = "BH")
+
+```
+To investigate the number of significant genes before and after correction of the p-values, an overview is plotted:
+
+```{r}
+signifGenes_pre <- nrow(filter(lung_cancer_df, p < 0.05))
+signifGenes_bonferroni <-  nrow(filter(lung_cancer_df, p_bonferroni < 0.05))
+signifGenes_holm <-  nrow(filter(lung_cancer_df, p_holm < 0.05))
+signifGenes_BH <-  nrow(filter(lung_cancer_df, p_BH < 0.05))
+
+dat_plot1 <- c(signifGenes_pre, signifGenes_bonferroni,
+               signifGenes_holm, signifGenes_BH)
+
+par(mfrow = c(1,2), mar = c(7,4,3,3))
+barplot(dat_plot1, main = "Before and after correction",
+        ylab = "number of significant genes",
+        names.arg = c("Pre correction","Bonferroni", "Holm", "BH"), 
+        las = 2, col = c("darkgray", "darkred", "darkgreen", "darkblue")
+        )
+barplot(dat_plot1[2:4], main = "After correction only",
+        ylab = "number of significant genes",
+        names.arg = c("Bonferroni", "Holm", "BH"), las = 2,
+        col = c("darkred", "darkgreen", "darkblue"))
+
+```
+
+From this first analysis, we can observe that the number of significant findings is decreased from over 400 to 10 - 14 by correcting the p-values. This seems reasonable, as the data set contains information on a large number of genes, thereby increasing the number of tests. Both methods controlling the family-wise error rate (FWER) return the same result (Bonferroni and Holm), while the method controlling false discovery rate (FDR) returns slightly more significant results (BH).
+
+In the dataset, a q-value is included:
+
+```{r}
+(signifGenes_q <-  nrow(filter(lung_cancer_df, q < 0.05)))
+signifGenes_q == signifGenes_BH
+```
+This column also contains 14 significant samples, indicating that the Benjamini-Hochberg correction was applied to correct the FDR. This can be tested by comparing the q-values with the generated results:
+
+```{r}
+table(round(lung_cancer_df$q,5) == round(lung_cancer_df$p_BH,5))
+table(round(lung_cancer_df$q,5) == round(lung_cancer_df$p_bonferroni,5))
+table(round(lung_cancer_df$q,5) == round(lung_cancer_df$p_holm,5))
+
+```
+The values are identical if a small error (most likely roundoff error by applying different methods on different machines) is corrected by rounding. This shows that the Benjamini-Hochberg correction or a very similar method was applied in the data set as well. 
+
+### A new type of cancer
+
+The same workflow can be applied to a similar dataset. As at the time of solving this task (09.11.22, 13:30), the website of the broad institute was offline, random noise was added to the values of the dataset:
+
+```{r}
+New_cancer_df <- lung_cancer_df[,5:(ncol(lung_cancer_df)-3)]*
+  sin(runif(1000,0,3))*rlnorm(100, mean = log(1), sd = 0.3)
+
+New_cancer_df$p_bonferroni <- p.adjust(New_cancer_df$p, method = "bonferroni")
+New_cancer_df$p_holm <- p.adjust(New_cancer_df$p, method = "holm")
+New_cancer_df$p_BH <- p.adjust(New_cancer_df$p, method = "BH")
+```
+
+It needs to be mentioned that the p-values in the generated dataset are not related to the actual data anymore, as both are varied independently. For the sake of getting used to the analysis workflow, this data set should be sufficient. 
+
+```{r}
+signifGenes_pre2 <- nrow(filter(New_cancer_df, p < 0.05))
+signifGenes_bonferroni2 <-  nrow(filter(New_cancer_df, p_bonferroni < 0.05))
+signifGenes_holm_2 <-  nrow(filter(New_cancer_df, p_holm < 0.05))
+signifGenes_BH_2 <-  nrow(filter(New_cancer_df, p_BH < 0.05))
+
+dat_plot2 <- c(signifGenes_pre2, signifGenes_bonferroni2,
+               signifGenes_holm_2, signifGenes_BH_2)
+
+par(mfrow = c(1,2), mar = c(7,4,3,3))
+barplot(dat_plot2, main = "Before and after correction",
+        ylab = "number of significant genes",
+        names.arg = c("Pre correction","Bonferroni", "Holm", "BH"), 
+        las = 2, col = c("darkgray", "darkred", "darkgreen", "darkblue")
+        )
+barplot(dat_plot2[2:4], main = "After correction only",
+        ylab = "number of significant genes",
+        names.arg = c("Bonferroni", "Holm", "BH"), las = 2,
+        col = c("darkred", "darkgreen", "darkblue"))
+
+```
+It can be seen, that the "new" dataset contains many more p-values above the significance threshold. After applying the corrections, the data approaches the same values as before adding noise. This indicates that the difference in p-values between false positives (due to multiple testing) and true positives is larger than the added noise, so that the correction still provides good separation of the groups. 
+
+The difference between both datasets can be visualized as follows:
+
+```{r}
+grouped_df <- as.data.frame(matrix(0, nrow = 2, ncol = 4))
+colnames(grouped_df) <- c("pre", "Bonferroni", "Holm", "BH")
+rownames(grouped_df) <- c("lung cancer", "New cancer")
+grouped_df[1,] <- dat_plot1[1:4]
+grouped_df[2,] <- dat_plot2[1:4]
+
+
+par(mfrow = c(1,2), mar = c(7,4,3,3))
+barplot(as.matrix(grouped_df), beside = TRUE,
+        main = "Before and after correction",
+        ylab = "number of significant genes",
+        names.arg = c("Pre correction","Bonferroni", "Holm", "BH"), 
+        las = 2, col = c("lightgray","darkgray","red", 
+                      "darkred","green", "darkgreen", "blue","darkblue")
+        )
+barplot(as.matrix(grouped_df[,2:4]), beside = TRUE,
+        main = "After correction only",
+        ylab = "number of significant genes",
+        names.arg = c("Bonferroni", "Holm", "BH"), 
+        las = 2, col = c("red", "darkred","green", "darkgreen", "blue","darkblue")
+        )
+
+```
+
+The bright bars on the left represent the original data, whereas the darker bars on the right show the newly generated data. It can be seen that a slight increase in p-values below significance level $\alpha$ after the BH correction is observed, as well as in the raw data. For different cancers, number of studied genes might have been different, therefore a normalization should be applied to plot the fraction of significant results relative to the total number of investigated genes.
+
+### Addition: KIPAN 
+
+After creating the above approach, another data set was obtained. The same analysis can be applied:
+
+```{r}
+cancer3_dat <- read.csv("./data/genes_KIPAN.csv")
+
+cancer3_dat$p_bonferroni <- p.adjust(cancer3_dat$p, method = "bonferroni")
+cancer3_dat$p_holm <- p.adjust(cancer3_dat$p, method = "holm")
+cancer3_dat$p_BH <- p.adjust(cancer3_dat$p, method = "BH")
+
+signifGenes_cancer3 <- nrow(filter(cancer3_dat, p < 0.05))
+signifGenes_bonferroni3 <-  nrow(filter(cancer3_dat, p_bonferroni < 0.05))
+signifGenes_holm_3 <-  nrow(filter(cancer3_dat, p_holm < 0.05))
+signifGenes_BH_3 <-  nrow(filter(cancer3_dat, p_BH < 0.05))
+
+grouped_df_new <- as.data.frame(matrix(0, nrow = 2, ncol = 4))
+colnames(grouped_df_new) <- c("pre", "Bonferroni", "Holm", "BH")
+rownames(grouped_df_new) <- c("lung cancer", "KIPAN")
+grouped_df_new[1,] <- 100 * dat_plot1[1:4]/nrow(lung_cancer_df)
+grouped_df_new[2,] <- 100 * c(signifGenes_cancer3, signifGenes_bonferroni3, 
+                        signifGenes_holm_3, signifGenes_BH_3)/nrow(cancer3_dat)
+
+par(mfrow = c(1,2), mar = c(7,4,3,3))
+barplot(as.matrix(grouped_df_new), beside = TRUE,
+        main = "Before and after correction",
+        ylab = "fraction of significant genes [%]",
+        names.arg = c("Pre correction","Bonferroni", "Holm", "BH"), 
+        las = 2, col = c("lightgray","darkgray","red", 
+                         "darkred","green", "darkgreen", "blue","darkblue")
+        )
+legend("topright", legend = c("Lung cancer data", "KIPAN data"), 
+       fill = c("lightgray",  "darkgray"),
+       title="Dataset represented by brightness",
+       cex = 0.5)
+
+barplot(as.matrix(grouped_df_new[,2:4]), beside = TRUE,
+        main = "After correction only",
+        ylab = "fraction of significant genes [%]",
+        names.arg = c("Bonferroni", "Holm", "BH"), 
+        las = 2, col = c("red", "darkred","green", "darkgreen", "blue","darkblue")
+        )
+```
+It can be seen that in the new dataset, more genes with a p-value above the significance threshold are observed. Even after correction, more true positives are observed. This could indicate that the disease is associated with different mechanisms. Alternatively, the multiple genes associated with the cancer could be part of a single pathway, thereby increasing the number of correlates without influencing the number of mechanisms. Due to the fact that this data set was provided relatively shortly before the deadline, no further investigation is conducted. Interestingly, again a higher number of true positives is observed after the BH-correction. 
+
+## Task 6.2 - multiple correction calibration
+
+100 random samples with a sample size of 10 each are simulated. 90% of the samples are generated with a mean of $\mu = 0$, while 10% of samples have a mean of $\mu = 3$. All samples are drawn from normal distributions with $\sigma = 1$.
+
+By conducting an independent *t*-test for each sample, we can confirm that slightly more than 10% of the data results in p-values that lead to rejection of the null-hypothesis. 10% are the expected value, as this fraction of samples was generated with a different mean. Additional rejected samples are false positives, drawn from the standard normal distribution. 
+
+```{r}
+pval_vec <- c()
+
+for (i in c(1:90)){
+  samples_sn <- rnorm(n = 10, mean = 0, sd = 1)
+  samples_sn_pval <- t.test(samples_sn)$p.value
+  pval_vec <- c(pval_vec, samples_sn_pval)
+}
+
+for (i in c(1:10)){
+  samples_dev <- rnorm(n=10, mean = 3, sd = 1)
+  samples_dev_pval <- t.test(samples_dev)$p.value
+  pval_vec <- c(pval_vec, samples_dev_pval)
+}
+
+par(mfrow = c(1,2), mar = c(3,3,2,1))
+h <- hist(pval_vec, breaks = seq(from=0, to=1, by=0.025),
+     plot=FALSE)
+cuts <- cut(h$breaks, c(-Inf,0.04999,Inf))
+plot(h, col=c("darkred","gray")[cuts],  xlab = "p-value of t-test",
+     main = expression("Histogram of p-values"))
+abline(v=0.05, col = "red", lty = 2, lwd = 2)
+
+fractions_data <- table(pval_vec>0.05)/length(pval_vec)
+barplot(fractions_data, col = c("darkred", "gray"),
+        names.arg=c("p-val < 0.05", "p-val > 0.05"),
+        main = expression(paste("Fraction of p-values below ", alpha)))
+
+fractions_data
+
+```
+
+As can be seen above, approximately 15% of the samples have a p-value below the significance threshold $\alpha$ (dotted red line). This indicates a low amount of false positive data. This is expected, as a multiple testing problem occurs. A way to correct for this, is the Bonferroni correction, which adjusts the significance threshold $\alpha$ for the number of samples m. With this approach, the family-wise error rate (FWER) is controlled. In the used R-function *p.adjust*, the p-values is adjusted directly, so $\alpha$ remains at $0.05$.
+
+```{r}
+pval_vec_bonf <- p.adjust(pval_vec, method = "bonferroni")
+
+par(mfrow = c(1,2), mar = c(3,3,2,1))
+h <- hist(pval_vec_bonf, breaks = seq(0,1,0.05),
+     plot=FALSE)
+cuts <- cut(h$breaks, c(-Inf,0.04999,Inf))
+plot(h, col=c("darkred","gray")[cuts],  xlab = "p-value of t-test",
+     main = expression(paste("Histogram of p-values")))
+
+fractions_bonferroni <- table(pval_vec_bonf>0.05)/length(pval_vec_bonf)
+barplot(fractions_bonferroni, col = c("darkred", "gray"),
+        names.arg=c("p-val < 0.05", "p-val > 0.05"),
+        main = expression(paste("Fraction of p-values below ", alpha)))
+
+```
+As shown above, the fraction of samples with p-values below the significance threshold approaches 10%. This is in accordance with the expectations based on the generation of the data. The fraction of samples, for which $p > \alpha$ is true represents the false discovery rate (FDR):
+
+```{r}
+fractions_bonferroni
+```
+The family-wise error rate can be calculated using the following formula:
+
+$$FWR = 1-(1-\alpha^*)^m$$
+Where $\alpha$ is the adjusted significance level for each test and $m$ is the number of independent tests.
+
+```{r}
+m <- length(pval_vec_bonf)
+(FWR_bonferroni <- 1-(1-0.05/m)^m)
+```
+As the FWER is adjusted in the Bonferroni correction to be smaller than 0.05, this value matches the expectation.
+
+Another way to correct for multiple testing problems is the Benjamini-Hochberg correction. This approach takes into account the ranks of the p-values to control the FDR. 
+
+```{r}
+pval_vec_BH <- p.adjust(pval_vec, method = "BH")
+
+par(mfrow = c(1,2), mar = c(3,3,2,1))
+h <- hist(pval_vec_BH, breaks = seq(0,1,0.05),
+     plot=FALSE)
+cuts <- cut(h$breaks, c(-Inf,0.04999,Inf))
+plot(h, col=c("darkred","gray")[cuts],  xlab = "p-value of t-test",
+     main = expression(paste("Histogram of p-values")))
+
+fractions_BH <- table(pval_vec_BH>0.05)/length(pval_vec_BH)
+barplot(fractions_BH, col = c("darkred", "gray"),
+        names.arg=c("p-val < 0.05", "p-val > 0.05"),
+        main = expression(paste("Fraction of p-values below ", alpha)))
+```
+As shown above, also this approach results in a reduction of rejected null hypotheses, approaching the expected result of 10%. Though in most runs, 1 or 2 false positives are observed. This was not the case for the Bonferroni-corrected data. The FDR can again be read out from the data table:
+
+```{r}
+fractions_BH
+```
+
+The FWR is calculated with $\alpha = 0.05$, as the p-values are adjusted directly and the significance level is not changed:
+
+```{r}
+m <- length(pval_vec_BH)
+(FWR_BH <- 1-(1-0.05)^m)
+```
+Meaning that a type I-error is almost certain to occur if the p-values were not adjusted accordingly in the Benjamini-Hochberg correction. 
+
+For a higher number of repeats (1000) of the process, we obtain the following average FDR:
+
+```{r}
+p_val_dat <- data.frame(matrix(ncol = 100, nrow = 0))
+
+
+for(j in c(1:1000)){
+  pval_vec <- c()
+  for (i in c(1:90)){
+    samples_sn <- rnorm(n = 10, mean = 0, sd = 1)
+    samples_sn_pval <- t.test(samples_sn)$p.value
+    pval_vec <- c(pval_vec, samples_sn_pval)
+  }
+  
+  for (i in c(1:10)){
+    samples_dev <- rnorm(n=10, mean = 3, sd = 1)
+    samples_dev_pval <- t.test(samples_dev)$p.value
+    pval_vec <- c(pval_vec, samples_dev_pval)
+  }
+  p_val_dat[nrow(p_val_dat) + 1,] <- pval_vec
+}
+
+FDR <- apply(p_val_dat,1, function(x) sum(x>0.05))/ncol(p_val_dat)
+(FDR_avg <- mean(FDR))
+
+```
+Indicating that on average, 15% of the nulls are rejected (with an expected value of 10%). This shows that in most iterations, there is a small fraction of false positives, increasing the FDR due to multiple testing. Increasing the number of repeats does not change this issue and the value does not average out to approach the expected value. For the FWER we obtain: 
+
+```{r}
+(FWER <- 1-(1-0.05)^100)
+```
+Again, this result shows that false positives are likely to occur in almost every sample. The reason for this is the multiple testing problem ("trying" 100 times but using the threshold for a single run). This shows impressively why correction approaches like Bonferroni or BH are necessary to prevent multiple testing problems. 
+
+
+
+
+
