@@ -1,0 +1,283 @@
+library("plot3D")
+library(tidyverse)
+library(gg3D)
+library(gganimate)
+library(av)
+library(gifski)
+library("plot3D")
+library("plotly")
+library(magick)
+library(rgl)
+library(bench)
+
+setwd("./Animation")
+file.remove(list.files(pattern=".gif"))
+file.remove(list.files(pattern=".png"))
+rm(list = ls())
+
+#eff_seed <- sample(1:2^15, 1)
+#set.seed(eff_seed)
+set.seed(123123123) # seed 1: 69694206969 seed 2: 123123123
+
+# Set parameters (reduced units)
+Kb = 1 #Boltzmann-constant: 1.380649×10−23
+
+m <- 1 # Mass 
+eps <- 1 # Depth of the potential well in the Lennard-Jones potential
+sigm <- 1 # Distance where Lennard-Jones potential = 0
+i <- 0 
+j <- 0
+
+N <- 100 # Change later to 100
+
+t_start <- 0
+t_end <- 50
+t_step <-5*10^-3 #good: 1*10^-2 
+t_vec <- seq(t_start, t_end, t_step)
+
+L_x <- 10
+L_y <- 10
+L_z <- 10
+
+k_vec <- c() #this will contain kinetic energies from each timestep
+
+# Define functions
+
+Particle_generation <- function(N){
+  Particle_list <- as.list(1:N)
+  for (i in 1:N){
+    names(Particle_list) <- paste("Particle",1:N,sep = "_")
+  }
+}
+
+# Initial particle placement
+## Random placement
+
+Particle_list <- Particle_generation(N) # Entries: Positions xyz/Velocity xyz/ Force xyz
+
+for (i in 1:N){
+  x <- as.numeric(sprintf("%.8f",runif(1,0,L_x)))
+  y <- as.numeric(sprintf("%.8f",runif(1,0,L_y)))
+  z <- as.numeric(sprintf("%.8f",runif(1,0,L_z)))
+  
+  Particle_list[[i]] <- as.numeric(c(x, y, z, 0, 0, 0, 0, 0, 0))
+  j <- 1
+  
+  while(j < i){ # Each pair only calculated once
+    x_old <- Particle_list[[j]][1]
+    y_old <- Particle_list[[j]][2]
+    z_old <- Particle_list[[j]][3]
+    
+    Coordinates <- matrix(c(x,y,z, x_old, y_old, z_old),3) 
+    distance <- dist(t(Coordinates), "euclidean")
+    
+    j <- j+1
+    
+    while(distance <= 0.9*sigm){
+      x <- sprintf("%.3f",runif(1,0,L_x))
+      y <- sprintf("%.3f",runif(1,0,L_y))
+      z <- sprintf("%.3f",runif(1,0,L_z))
+      Coordinates <- matrix(c(x,y,z, x_old, y_old, z_old),3) 
+      distance <- dist(t(Coordinates), "euclidean")
+      
+      j <-  1 # Because new particle needs to iterate through all previous particles
+    }
+    
+    
+  }
+} 
+
+pos_x <- data.frame()
+pos_y <- data.frame()
+pos_z <- data.frame()
+
+# for plotting
+for (i in c(1:N)){
+  pos_x[i,1] <- Particle_list[[i]][1]
+  pos_y[i,1] <- Particle_list[[i]][2]
+  pos_z[i,1] <- Particle_list[[i]][3]
+  
+}
+
+# Update timestep
+
+i <- 0 
+j <- 0
+
+counter <- 0
+
+Forces_LJ <- function(sigm, eps, posvec_1, posvec_2){ #Lennard–Jones potential
+  dVec  <-  posvec_2 - posvec_1
+  # r_ij <- norm(dVec, type="2") #sqrt(sum(dVec^2)) -> Updated because of periodic boundary contitions
+  
+  # xi <- f_i[1]
+  # yi <- f_i[2]
+  # zi <- f_i[3]
+  # 
+  # xj <- f_j[1]
+  # yj <- f_j[2]
+  # zj <- f_j[3]
+  
+  
+  d_x <- posvec_2[1] - posvec_1[1]
+  d_x <- d_x - round(d_x/L_x) * L_x
+  
+  d_y <- posvec_2[2] - posvec_1[2]
+  d_y <- d_y - round(d_x/L_y) * L_y
+  
+  d_z <- posvec_2[3] - posvec_1[3]
+  d_z <- d_z - round(d_x/L_z) * L_z
+  
+  vec_dist <- as.matrix(c(d_x, d_y, d_z))
+  
+  r_ij <- norm(vec_dist, type="2") #This is used to generate periodic boundary conditions
+  
+  if(r_ij == 0){r_ij <- 0.0000001}
+  
+  f_ij <- (24*eps/r_ij) * 
+    (2*((sigm/r_ij)^12) - ((sigm/r_ij)^6)) *
+    (dVec / r_ij)
+  f_ij
+}
+
+start_time <- Sys.time()
+
+for (t in t_vec){
+  counter <- counter + 1
+  sum_vel <- 0 # Calculates the sum of all velocities in each timestep -> necessary for temperature
+  
+  for (i in 1:N){
+    Particle_list[[i]][7:9] <- c(0,0,0) # set all forces to Zero
+  }
+  
+  for (i in 1:N){
+    j <- 1
+    while(j < i){ # Each pair only calculated once
+      
+      posvec_1 <- as.numeric(Particle_list[[i]][1:3]) # Particle positions of i & j
+      posvec_2 <- as.numeric(Particle_list[[j]][1:3])
+      
+      force_update <- Forces_LJ(sigm, eps, posvec_1, posvec_2) # Calculate and update forces
+      
+      Particle_list[[i]][7:9] <- Particle_list[[i]][7:9] - force_update
+      Particle_list[[j]][7:9] <- Particle_list[[j]][7:9] + force_update
+      
+      j <- j+1
+      
+    }
+  }
+  
+  for (i in 1:N){ # Semi-implicit Euler Method
+    
+    Particle_list[[i]][4:6]  <- Particle_list[[i]][4:6] + (t_step/m) * Particle_list[[i]][7:9] # Update velocity
+    Particle_list[[i]][1:3] <- Particle_list[[i]][1:3] + t_step * Particle_list[[i]][4:6] # Update position
+    
+    ## Place all particles back in simulation box after they cross boundaries
+    
+    
+    
+    if (Particle_list[[i]][1] > L_x){Particle_list[[i]][1] <-  Particle_list[[i]][1] - floor(Particle_list[[i]][1]/L_x) * L_x}
+    if (Particle_list[[i]][1] < 0){Particle_list[[i]][1] <-  Particle_list[[i]][1] + ceiling(-1*Particle_list[[i]][1]/L_x) * L_x} 
+    
+    if (Particle_list[[i]][2] > L_y){Particle_list[[i]][2] <-  Particle_list[[i]][2] - floor(Particle_list[[i]][2]/L_y) * L_y}
+    if (Particle_list[[i]][2] < 0){Particle_list[[i]][2] <-  Particle_list[[i]][2] + ceiling(-1*Particle_list[[i]][2]/L_y) * L_y}
+    
+    if (Particle_list[[i]][3] > L_z){Particle_list[[i]][3] <-  Particle_list[[i]][3] - floor(Particle_list[[i]][3]/L_z) * L_z}
+    if (Particle_list[[i]][3] < 0){Particle_list[[i]][3] <-  Particle_list[[i]][3] + ceiling(-1*Particle_list[[i]][3]/L_z) * L_z}
+    
+    vel_step <- as.matrix(Particle_list[[i]][4:6])
+    sum_vel <- sum_vel + (norm(vel_step, type="2"))^2 * m # calculates kinetic energy for each step
+    
+    ## positions for plotting
+    
+    pos_x[i,counter] <- Particle_list[[i]][1]
+    pos_y[i,counter] <- Particle_list[[i]][2]
+    pos_z[i,counter] <- Particle_list[[i]][3]
+    
+  }
+  
+  
+  k_vec <- c(k_vec, sum_vel)
+}
+
+
+end_time <- Sys.time()
+
+start_time
+end_time
+end_time - start_time
+
+# Plot simulation outcomes
+
+pos_x_t <- t(pos_x)
+colnames(pos_x_t) <- rep("x", N)
+
+pos_y_t <- t(pos_y)
+colnames(pos_y_t) <- rep("y", N)
+
+pos_z_t <- t(pos_z)
+colnames(pos_z_t) <- rep("z", N)
+
+timematrix <- rep(t_vec,N)
+
+Pos_array <- array(c(pos_x_t, pos_y_t, pos_z_t, timematrix), c(counter, N, 4))
+
+# names <- c(rep("x", N), rep("y", N), rep("z", N), rep("t", N))
+# 
+# colnames(Pos_array[,,1]) <- rep("x", N)
+# colnames(Pos_array[,,2]) <- rep("y", N)
+# colnames(Pos_array[,,3]) <- rep("z", N)
+# colnames(Pos_array[,,4]) <- rep("t", N)
+
+x=Pos_array[,,1]
+y=Pos_array[,,2]
+z=Pos_array[,,3]
+
+
+fig <- seq(1, length(t_vec), 10) # good: stepsize of 10
+
+png(file="example%05d.png", width=900, height=600)
+for(i in fig){
+  
+  x=Pos_array[i,,1]
+  y=Pos_array[i,,2]
+  z=Pos_array[i,,3]
+  #Color = Pos_array[i,,5]
+  
+  par(mfrow = c(1,2))
+  
+  scatter3D(x, y, z, col = "#000000" ,bty = "f", theta = 15, phi = 0, pch = 16, cex=1.5, colkey = FALSE,
+            xlim=c(0,L_x),
+            ylim=c(0,L_y),
+            zlim=c(0,L_z))
+  scatter3D(x, y, z, col = "#000000" ,bty = "f", theta = 05, phi = 45, pch = 16, cex=1.5, colkey = FALSE,
+            xlim=c(0,L_x),
+            ylim=c(0,L_y),
+            zlim=c(0,L_z))
+  title(paste0(timematrix[i], " sec"), line = -16, outer = TRUE)  
+  
+}
+dev.off()
+
+# Use image magick
+
+imgs <- list.files("./Animation", full.names = TRUE)
+gif <- gifski(imgs, gif_file = "animation.gif", delay = 0.005)
+
+
+img_list <- lapply(imgs, image_read)
+img_joined <- image_join(img_list)
+img_animated <- image_animate(img_joined, fps = 100) # good: fps = 50
+image_write(image = img_animated,
+            path = "./Animation/test.gif")
+
+# Remove png files
+file.remove(list.files(pattern=".png"))
+
+# Calculate temperature from kinetic energy
+
+Temp_vec <- (2*k_vec)/Kb * 3 * (N-1)
+dev.off()
+plot(t_vec, Temp_vec, main=paste0("Temperature change, ", N, " particles"),
+     ylab="Temperature (reduced units)", xlab="Time in seconds",)
+
