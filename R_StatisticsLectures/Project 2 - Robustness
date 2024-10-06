@@ -1,0 +1,144 @@
+---
+title: "Introduction to Statistics and R - Exercise 2"
+author: "Luca Witte"
+date: "2022-10-10"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2) 
+library(tidyr)
+
+```
+
+# Exercise 2.1 - Robustness
+
+Here, 100000 normally distributed random variables are drawn with a mean of $\mu = 2$ and a variance of $\sigma^2 = 1$. The largest 10% of the samples are thereafter multiplied separately by each of the components of $\chi \in \{1,2,3,4,5\}$. As the task explicitely mentions separate vectors, a loop is used to generate the vectors. An easier approach would be to store all generated samples in a data frame.
+
+For each vector, sample mean, standard deviation, median and interquartile range are calculated and stored in separate vectors.
+
+```{r}
+Num <-  100000
+samples <- data.frame(data = rnorm(Num, mean = 2, sd = 1))
+samples_top <- top_frac(samples, n = 0.1, wt = data)
+means <- rep(0,5)
+sds <- rep(0,5)
+iqrs <- rep(0,5)
+medians <- rep(0,5)
+
+chi <- c(1:5)
+
+
+for (i in chi){
+  assign(paste0("top_chi_", i), samples_top * i)
+  means[i] <- mean(eval(parse(text = paste0("top_chi_", i)))[[1]])
+  sds[i] <- sd(eval(parse(text = paste0("top_chi_", i)))[[1]])
+  iqrs[i] <- IQR(eval(parse(text = paste0("top_chi_", i)))[[1]])
+  medians[i] <- median(eval(parse(text = paste0("top_chi_", i)))[[1]])
+
+  # print the data of each vector to check relative increase
+  print(head(eval(parse(text = paste0("top_chi_", i)))[[1]])) 
+}
+
+```
+The visualization of the result looks like this:
+
+```{r}
+par(mfrow = c(2,2))
+(means_norm <- means/chi)
+(sds_norm <- sds/chi)
+
+plot(chi, means, xlab = expression(chi), ylab = "mean of top 10 %", pch = 16)
+plot(chi, sds, xlab = expression(chi), ylab = "st. dev. of top 10 %", pch = 16)
+plot(chi, means_norm, xlab = expression(chi), 
+     ylab = expression("mean normalized by " ~ chi), pch = 16)
+plot(chi, sds_norm, xlab = expression(chi), 
+     ylab = expression("st. dev. normalized by " ~ chi), pch = 16)
+
+
+```
+From the plots above, it is clear to see that both mean and standard deviation of the largest 10% of the normally distributed values increase linearly with $\chi$. This shows that multiplying the individual values with a constant has the same effect as multiplying the sample metrics with this constant. For better visualization, the mean and the standard deviation were divided by $\chi$ and plotted in addition. These normalized metrics do not change with $\chi$.
+
+```{r}
+(iqrs_norm <- iqrs/chi)
+(medians_norm <- medians/chi)
+
+par(mfrow = c(2,2))
+plot(chi, medians, xlab = expression(chi), ylab = "Median of top 10 %", pch = 16)
+plot(chi, iqrs, xlab = expression(chi), ylab = "IQR of top 10 %", pch = 16)
+plot(chi, medians_norm, xlab = expression(chi), ylab = expression("Median normalized by " ~ chi), pch = 16)
+plot(chi, iqrs_norm, xlab = expression(chi), ylab = expression("IQR normalized by " ~ chi), pch = 16)
+
+```
+For the median and the interquartile range, we observe a similar behaviour as in the means and standard deviations. By multiplying the individual sample values with a constant, the interquartile range and the median are scaled linearly by the same factor. This is reversed by dividing the IQR by $\chi$. This shows, how systematic error (e.g. due to calibration mistakes) that affects all measured values in the same way propagates to change the sample metrics in the output.
+
+## Exercise 2.2 - Lots of boxes
+
+```{r}
+height_df <- read.csv("./data/Height_1884_91.csv")
+height_df$canton <- as.factor(height_df$canton) 
+
+ggplot(height_df, aes(x = , y = height, fill = reorder(canton,-height))) +
+  geom_boxplot(alpha = 0.4) + theme_bw() + coord_flip() +
+  theme(text = element_text(size = 13)) + 
+  labs(fill="Canton", x = "Canton", y = "Height in cm") 
+
+```
+
+We can observe that by median, GE and AI are the tallest and smallest cantons respectively. Plotting them in a histogram yields:
+
+```{r}
+height_df_extremes <- height_df[height_df$canton == "GE" | height_df$canton == "AI",]
+
+# Density plot for each canton seperately:
+ggplot(height_df_extremes, aes(x = height, y = ..density..)) +
+  geom_histogram(aes(colour = canton, fill = canton), 
+                 position = "identity", binwidth = 1, alpha = 0.5) +
+theme_bw() + theme(text = element_text(size = 14)) +
+geom_density(aes(group = canton,  colour = canton), size = 0.7)+
+scale_color_manual(values = c("firebrick3", "darkblue"))
+
+```
+
+## Exercise 2.3 - Maps & Heigths
+
+```{r}
+switzerland <- read.csv("./data/switzerland.csv")
+switzerland$mean_height <- rep(0, nrow(switzerland))
+
+average_heigth <- cbind(by(height_df$height, height_df$canton, mean, simplify = TRUE))
+
+for(i in 1:25){
+  switzerland[which(switzerland$canton == dimnames(average_heigth)[[1]][i]), 
+            "mean_height"] <- average_heigth[[dimnames(average_heigth)[[1]][i],1]]
+}
+
+# Code template from lecture notes:
+AI_AR <- switzerland[which(switzerland$canton %in% c("AI", "AR")), ]
+ggplot() +
+geom_polygon(data = switzerland, 
+aes(x = long, y = lat, group = group, fill = mean_height)) +
+geom_polygon(data = AI_AR, 
+aes(x = long, y = lat, group = group, fill = mean_height)) +
+theme_void() +
+scale_fill_gradientn(limits = c(159,171),
+colours=c( "darkblue","lightblue", "darkorange1", "yellow"),
+breaks=c(160,165,170), labels=c(160,165,170), name = "Average height in cm: ") +
+theme(legend.position = "bottom",
+legend.text = element_text(size = 8),
+legend.key.size = unit(.5, "cm")) +
+coord_fixed(ratio = 1) +
+ggtitle("Switzerland coloured by average heigth")
+
+```
+From the map, it can be noticed that the "Height_1884_91.csv" file is missing data for the canton "JU" in the northwest. Therefore this canton is not colored in. This can be easily checked:
+
+```{r}
+(table(height_df$canton == "AI")) # example of other canton -> present
+table(height_df$canton == "JU") # -> absent
+```
+There might be historical reasons for this finding (e.g the canton joined the Swiss country after the data was recorded etc.) that the student is not aware of.
+
+
