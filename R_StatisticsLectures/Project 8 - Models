@@ -1,0 +1,373 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: '8: Programming - lots of models'
+author: "Luca Witte"
+date: "24 November 2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 3, fig.width = 6)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse) # load for the functions used later
+seed_number <- 51628 # remember to use your personal seed
+```
+
+## Gapminder data
+
+This workbook is shamelessly taken from **Hadley Wickham's** book *R for Data Science* inspired by the work of **Hans Rosling**.
+
+The data we'll look at contains the estimated life expectancy of people in different countries 
+
+```{r}
+load("./data/gapminder.rData")
+gapminder %>% head()
+```
+
+where we have included colour codes for each continent and country as seperate data frames:
+
+```{r}
+continent_colours
+country_colours %>% head
+```
+
+We can plot all this data
+
+```{r}
+gapminder %>% 
+  ggplot(aes(year, lifeExp, colour = continent, group = country)) +
+    geom_line(alpha = 0.3) + ylab("life expectancy") +
+    scale_color_manual(values = continent_colours$colours) + 
+    theme_bw() + theme(text = element_text(size=12)) 
+```
+
+where putting `group = country` gives a separate line per country when we colour by continent.  We could also colour directly by country, but there wouldn't be space for the legend!
+
+```{r}
+gapminder %>% 
+  ggplot(aes(year, lifeExp, colour = country)) +
+    geom_line(alpha = 0.3) + ylab("life expectancy") +
+    scale_color_manual(values = country_colours$colours) + 
+    theme_bw() + theme(text = element_text(size=12)) + 
+    theme(legend.position = "none")
+```
+
+
+## A linear model
+
+Let's extract Switzerland 
+
+```{r}
+gapminder %>% filter(country == "Switzerland") %>%
+  ggplot(aes(year, lifeExp, colour = country)) +
+    geom_line(size = 2) + ylab("life expectancy") +
+    scale_color_manual(values = filter(country_colours, 
+                                       country == "Switzerland")$colours) + 
+    theme_bw() + theme(text = element_text(size=12))
+```
+
+and we see a pretty linear trend.
+
+*Exercise 1: Perform a linear model for the data from Switzerland of life expectancy against year.  Plot the linear trend and residuals.*
+
+**Note** If we store the output of an `lm` function as `lm_fit` we can access the residuals as `lm_fit$residuals` and the $R^2$ value as `summary(lm_fit)$r.squared`. In general if we want to see what other goodies are hidden inside `lm_fit` we can use the `ls()` function, for example `ls(lm_fit)` and `ls(summary(lm_fit))`. 
+
+```{r}
+gapminder[gapminder$country == "Switzerland",] %>% {lm(., formula = lifeExp ~ year)} -> lm_fit_1
+```
+
+
+*CODE Exercise 1: What is the digit in the third decimal place of the $R^2$ value from the linear regression for Switzerland?*
+
+```{r}
+Code_vec <- rep(NA, 6)
+# Function from programming sheet 1:
+ExtractDecimalPlace <- function(x, n) {
+  x <- abs(x)
+  floor(10*(x*10^(n-1) - floor(x*10^(n-1))))
+}
+
+summary(lm_fit_1)$r.squared %>% {ExtractDecimalPlace(.,3)} -> Code_vec[1]
+```
+
+## Nesting models
+
+If we `group` the data by country and `nest` it
+
+```{r}
+gapminder %>% group_by(country) %>% nest() %>% head(3)
+```
+
+we can see that we have a row per county and then a new column which stores all the data for that country.  Since the continent is determined by the country, we can also keep that outside the `data` column by also grouping by continent.
+
+```{r}
+gapminder %>% group_by(country, continent) %>% nest() -> gapminder_nest
+gapminder_nest %>% head(3)
+```
+
+
+## Linear models
+
+In the nested form, we can now run a linear model for each country with the `map` function, and store the whole `lm` object as a new column with `mutate`.  For this we first define a helper function which performs the linear modelling we want
+
+```{r}
+life_lm_fit <- function(df) {
+  lm(lifeExp ~ year, data = df)
+}
+```
+
+which we then use to generate the column of `lm` objects:
+
+```{r}
+gapminder_nest %>% mutate(life_lm = map(data, life_lm_fit)) -> gapminder_lm
+gapminder_lm %>% head(3)
+```
+
+*Exercise 2: Make sure you understand the above, and check that the residuals for Switzerland match those plotted in Exercise 1.*
+
+```{r}
+gapminder_lm[gapminder_lm$country == "Switzerland",]$life_lm
+```
+
+
+## Adding residuals
+
+Inside our lists of linear models, the residuals are stored.  We would like to add the residuals to the data stored per country, so that we can `unnest` back to the original data frame including the residuals as another column.  For this we define a function that takes two objects, the data and the linear model, as arguments, and returns the data with the residuals appended:
+
+```{r}
+add_resid <- function(df, lm) {
+  mutate(df, resid = lm$resid)
+}
+```
+
+Now we can use the `map2` version of `map` which takes two arguments:
+
+```{r}
+gapminder_lm %>% mutate(resid = map2(data, life_lm, add_resid)) -> gapminder_resid
+```
+
+*Exercise 3: Compare the `data` and `resid` columns for Switzerland in `gapminder_resid` and check the code above has done what we wanted.*
+
+```{r}
+head(gapminder_resid[gapminder_resid$country == "Switzerland",]$data)
+head(gapminder_resid[gapminder_resid$country == "Switzerland",]$resid)
+
+```
+
+Finally we `unnest` the new column
+
+```{r}
+gapminder <- unnest(gapminder_resid, resid)
+gapminder %>% head(3)
+```
+
+and we can send the result to plot
+
+```{r}
+gapminder %>% 
+  ggplot(aes(year, resid, colour = continent, group = country)) +
+    geom_line(alpha = 0.3) + ylab("residual life expectancy") +
+    scale_color_manual(values = continent_colours$colours) + 
+    theme_bw() + theme(text = element_text(size=12)) 
+```
+
+
+*Exercise 4: Facet the plot of residuals by continent and colour by country.*
+
+```{r}
+gapminder %>% 
+  ggplot(aes(year, resid, colour = country, group = country)) +
+    geom_line(alpha = 0.3) + ylab("residual life expectancy") +
+    #scale_color_manual(values = continent_colours$country) + 
+    theme_bw() + theme(text = element_text(size=12)) + 
+    theme(legend.position = "none")+
+    facet_grid(cols = vars(continent))
+```
+
+*CODE Exercise 2: Find the two countries with the largest deviation (absolute residual).  What is the digit in the third decimal place of the second largest deviation?*
+
+```{r}
+# Largest two:
+gapminder[which(abs(gapminder$resid) == sort(abs(gapminder$resid), decreasing = TRUE)[1] |
+                abs(gapminder$resid) == sort(abs(gapminder$resid), decreasing = TRUE)[2]
+                                     ),]
+# Code number
+
+dat_2 <- gapminder[which(abs(gapminder$resid) == sort(abs(gapminder$resid), decreasing = TRUE)[2]
+                                     ),]
+Code_vec[2] <- ExtractDecimalPlace(dat_2$resid, 3)
+
+```
+
+
+## Extracting $R^2$ values
+
+A measure of the linearity of the fit is the $R^2$ statistic.
+
+*Exercise 5: Extract the $R^2$ value from each linear model in the `gapminder_lm` data frame.*
+
+```{r}
+
+life_lm_fit_rs <- function(df) {
+  summary(lm(lifeExp ~ year, data = df))$r.squared
+}
+
+gapminder_nest %>% mutate(life_lm_res = map(data, life_lm_fit_rs)) -> gapminder_lm_test
+
+```
+
+*CODE Exercise 3: How many countries have a $R^2$ value below $\frac{1}{4}?$*
+
+```{r}
+
+Code_vec[3] <- table(gapminder_lm_test$life_lm_res < 0.25)[2]
+```
+
+*Exercise 6: Plot the residuals of those countries.*
+
+
+## Quadratic fitting
+
+In the plots of residuals, we could see a slight bend on average.  Instead of a linear function of `year` we can add a quadratic term.  First we add this as a new column to the data
+
+```{r}
+gapminder <- mutate(gapminder, year_1 = year - 1980, year_2 = year_1^2)
+```
+
+where we centered the year around 1980 as a date in the middle of our range.  Now we can put this quadratic term as another predictor in the `lm`. **Note:** this is still a linear model, since the response is a linear function of the predictors, even if they themselves have been transformed.  For example for Switzerland, we would have
+
+```{r}
+gapminder %>% filter(country == "Switzerland") %>% 
+  lm(lifeExp ~ year_1 + year_2, data = .) %>% summary()
+```
+
+and we can see that the quadratic term is not very helpful for Switzerland.
+
+*Exercise 7: Run the linear model with a quadratic term in time on all countries.  Extract the residuals. Plot the residuals facetted by continent.* 
+
+```{r}
+
+# The functions from above are reused
+
+life_lm_fit_rs <- function(df) {
+  summary(lm(lifeExp ~ year_1 + year_2, data = df)) #$residuals
+}
+
+gapminder %>% group_by(country, continent) %>% nest() -> gapminder_nest_7
+
+life_lm_fit <- function(df) {
+  lm(lifeExp ~ year_1 + year_2, data = df)
+}
+
+gapminder_nest_7 %>% mutate(life_lm_7 = map(data, life_lm_fit)) -> gapminder_lm_7
+
+add_resid <- function(df, lm) {
+  mutate(df, resid = lm$resid)
+}
+
+gapminder_lm_7 %>% mutate(resid = map2(data, life_lm_7, add_resid)) -> gapminder_resid_7
+
+gapminder <- unnest(gapminder_resid_7, resid, names_sep = "_")
+
+```
+
+
+*Exercise 8: Extract the $R^2$ terms and the $p$-value for the quadratic term.*
+
+```{r}
+life_lm_fit_rsq <- function(df) {
+  summary(lm(lifeExp ~ year_1 + year_2, data = df))$r.squared
+}
+
+life_lm_fit_p <- function(df) {
+  summary(lm(lifeExp ~ year_1 + year_2, data = df))$coefficients["year_2",4]
+}
+
+
+gapminder_nest_7 %>% mutate(life_lm_rsq = map(data, life_lm_fit_rsq)) -> gapminder_lm_test_8
+gapminder_lm_test_8 %>% mutate(life_lm_p = map(data, life_lm_fit_p)) -> gapminder_lm_test_8
+
+```
+
+
+*CODE Exercise 4: For how many countries is the quadratic term significant (at the 5% level) in the regression?*
+```{r}
+Code_vec[4] <- table(gapminder_lm_test_8$life_lm_p < 0.05)[2]
+```
+
+*CODE Exercise 5: What is the digit in the third decimal place of the second lowest $R^2$?*
+
+```{r}
+dat_5 <- gapminder_lm_test_8[which(gapminder_lm_test_8$life_lm_rsq == sort(
+        as.numeric(gapminder_lm_test_8$life_lm_rsq), decreasing = FALSE)[2]),]
+
+Code_vec[5] <- ExtractDecimalPlace(as.numeric(dat_5$life_lm_rsq), 3)
+
+```
+
+
+## Philipp's data
+
+We read in Philipp's data from Programming 7 again
+
+```{r, message = FALSE}
+DESeq_data <- readRDS("./data/DESeq2_database.rds")
+DESeq_data <- filter(DESeq_data, !is.na(padj))
+name_dictionary <- readRDS("./data/ID_trueName.rds")
+DESeq_name_df <- left_join(DESeq_data, name_dictionary)
+DESeq_name_df <- na.omit(DESeq_name_df)
+```
+
+Philipp was interested in peptides with a higher log fold change as they get less similar to the parent sequence.  In the data frame, we are interested in the `lfcShrink` and `Identity` columns, where an identity of 100% means it is the same sequence as the parent.
+
+*Exercise 9: For each `trueName`, which has at least three different peptides and at least two different values of `Identity`, run a linear model of `lfcShrink` against `Identity` (**Hint:** `str_replace`).  Extract the slope, its $p$-value, and the $R^2$ value.*
+
+```{r}
+
+DESeq_name_df$Identity <- parse_number(DESeq_name_df$Identity)/100
+Out_dat9 <- data.frame(matrix(
+  NA, nrow = length(names(table(DESeq_name_df$trueName))),
+  ncol = 4
+))
+colnames(Out_dat9) <- c("trueName", "slope", "p_value", "R^2")
+
+for(i in c(1:length(names(table(DESeq_name_df$trueName))))){
+  name <- names(table(DESeq_name_df$trueName))[i]
+  sub_data <- (DESeq_name_df[DESeq_name_df$trueName == name, ])
+  Out_dat9[i,1] <- name
+  
+  if(nrow(sub_data) > 2 & length(names(table(sub_data$Identity))) > 1){
+    Out_dat9[i,2] <- summary(lm(lfcShrink ~ Identity, data = sub_data))$coefficients[2,1]
+    Out_dat9[i,3] <- summary(lm(lfcShrink ~ Identity, data = sub_data))$coefficients[2,4]
+    Out_dat9[i,4] <- summary(lm(lfcShrink ~ Identity, data = sub_data))$r.square
+  }
+}
+
+```
+
+
+*CODE Exercise 6: Find the `trueName` with a negative correlation, a significant $p$-value (at the 5% level) and the highest $R^2$ value. What number is in the main part of the name (not in the brackets).*
+
+```{r}
+code_dat_6 <- na.omit(Out_dat9)
+code_dat_6_filtered <- filter(code_dat_6, 
+         slope < 0 &
+         p_value < 0.05)
+full_name <- code_dat_6_filtered[which( code_dat_6_filtered$`R^2` == max(code_dat_6_filtered$`R^2`)),]$trueName
+Code_vec[6] <- parse_number(full_name)
+```
+
+
+## CODE concatenation
+
+*FINAL CODEWORD: Combine your answers to CODE Exercises `c(1:6)` into a single string with underscores separating the individual answers. Upload this codeword, without speech marks.*
+
+```{r}
+paste(as.character(Code_vec), collapse="_") # Code copied from exercise 1
+```
+
