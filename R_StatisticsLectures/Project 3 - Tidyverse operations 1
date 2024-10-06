@@ -1,0 +1,398 @@
+---
+title: "Introduction to Statistics and R"
+subtitle: '3: Programming - piping, grouping and summarising'
+author: "Luca Witte"
+date: "13 October 2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, fig.height = 3, fig.width = 6)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse) # load for the functions used later
+seed_number <- 51628 # remember to use your personal seed
+```
+
+## Pipes
+
+Instead of placing the arguments of functions inside brackets, we can **pipe** them into the function with `%>%`
+
+```{r}
+sin(1:5)
+1:5 %>% sin()
+```
+
+For functions, like `sin`, with one argument `f`, `f()`, and `f(.)` are all equivalent.  In the last of these, the `.` represents the object before the `%>%`.  For functions with several arguments, previous output before the `%>%` is passed as the first argument by default and does not need to be included, or we can make it explicit with the `.` as can be seen in the following equivalent expressions
+
+```{r}
+c(1:5, NA) %>% min(na.rm = TRUE) 
+c(1:5, NA) %>% min(., na.rm = TRUE) 
+```
+
+Note the `na.rm=TRUE` option of various base functions in `R` like `min`, `mean` and so on means that the missing data encoded as `NA` is removed and the function only evaluated on the remaining data.  If they are not removed, `R` will return `NA`
+
+```{r}
+c(1:5, NA) %>% min(na.rm = FALSE) 
+```
+
+For some base functions, which are not named, we need to explicity reference with the `.`
+
+```{r}
+1:5 %>% + 1
+# 1:5 %>% ^2 # this would give an error
+1:5 %>% .^2
+```
+
+One complication is if the `.` is itself inside a nested function. `R` then tries to send the `.` both as the first argument of the function **and** where the `.` actually is.  Sometimes this functionality can be useful, but it can also lead to errors. To ensure the command is evaluated with the `.` passed to only where the `.` is typed, we enclose the statement in braces `{}`
+
+```{r}
+# 1:5 %>% 2^sqrt(.) # this would give an error
+1:5 %>% {2^sqrt(.)}
+```
+
+For logical values (`TRUE` and `FALSE`) typing `!` before corresponds to logical negation
+
+```{r}
+x <- TRUE
+!x
+```
+
+We now try passing logical values to determine whether to remove `NA` values with pipes
+
+```{r}
+TRUE %>% min(c(1:5, NA), na.rm = .)
+FALSE %>% min(c(1:5, NA), na.rm = !.)
+```
+
+*Exercise 1: Why does `R` give these results, and how can we get the intended behaviour?*
+
+The logical value is also passed as argument to the min() function -> use braces.
+```{r}
+
+TRUE %>% {min(c(1:5, NA), na.rm = .)}
+FALSE %>% {min(c(1:5, NA), na.rm = !.)}
+```
+
+`R` treats missing data as unknown, so two `NA` values are neither equal or unequal
+
+```{r}
+NA == NA # check equality
+NA != NA # check inequality
+```
+
+Instead to test if a value is `NA` we must use the `is.na` function
+
+```{r}
+c(1:5, NA) %>% is.na
+```
+
+With all this in mind we can look again at what removing `NA` values does
+
+```{r}
+c(1:5, NA) %>% mean(na.rm = TRUE) 
+c(1:5, NA) %>% {mean(.[which(!is.na(.))])}
+```
+
+*Exercise 2: Make sure you understand exactly what happens in the last command.*
+From inside to outside of the brackets: 
+is.na(.) gives the logical vector -> which elements are NA
+which(!) gives the indices of the elements that are not TRUE in the previous statement
+.[] uses the returned indices to access the elements in the vector
+mean() returns mean of these elements
+
+So far **piping** hasn't looked very useful, but the joy of **piping** is that we can daisy chain together as many operations as we like.  So instead of nesting them inside brackets
+
+```{r}
+sum(sin(exp(c(0:5)) + 1)^2)
+```
+
+we can **pipe** the output of one function into the next with `%>%`
+
+```{r}
+c(0:5) %>% exp() %>% {. + 1} %>% sin() %>% {.^2} %>% sum()
+```
+
+At each stage the current output on the left of each `%>%` is sent as input to the next stage.
+
+*CODE Exercise 1: Using pipes, take the numbers from 0 to your personal seed, add 1, take logs, add them together, take the square root and divide by 2. What is the integer part of the result?*
+
+
+```{r}
+
+Code_vec <- rep(0,6)
+
+seed_number %>% {c(1:.)} %>% {.+1} %>% log() %>% sum %>% 
+  sqrt %>% {./2} %>% as.integer() -> Code_vec[1]
+
+```
+
+The main idea with **pipes** is that they make it easier to follow and "read" the steps in the calculation. Compare the following 
+
+```{r}
+mean(c(1:5, NA)[which(!is.na(c(1:5, NA)))])
+c(1:5, NA) %>% {mean(.[which(!is.na(.))])}
+c(1:5, NA) %>% .[which(!is.na(.))] %>% mean
+c(1:5, NA) %>% setdiff(NA) %>% mean 
+```
+
+Most often, we will want to perform a sequence of operations on data.  Let's say we wish to compute the mean BMI of the men in the `swiss_army` data
+
+```{r}
+"./data/Zurich_data.csv" %>% read.csv %>% mutate(BMI = Weight/(Height/100)^2) %>%
+  filter(Sex == "M") %>% pull(BMI) %>% mean
+```
+
+The new command is `pull` which extracts the single named column of a data frame as a vector.  The command `pull(BMI)` is equivalent to `.$BMI`.
+
+This sequence above does not store anything (there is no assignment) and just prints out the result.  To store the final output we can assign to the right with `->`
+
+```{r}
+"./data/Zurich_data.csv" %>% read.csv %>% mutate(BMI = Weight/(Height/100)^2) %>%
+  filter(Sex == "M") %>% pull(BMI) %>% mean -> mean_BMI_men
+mean_BMI_men
+```
+
+*CODE Exercise 2: What is the digit in the first decimal place of the standard deviation of the BMI of the women in the `swiss_army` data?*
+
+```{r}
+#function from first exercise:
+ExtractDecimalPlace <- function(x, n) {
+  x <- abs(x)
+  floor(10*(x*10^(n-1) - floor(x*10^(n-1))))
+}
+
+"./data/Zurich_data.csv" %>% read.csv %>% mutate(BMI = Weight/(Height/100)^2) %>%
+      filter(Sex == "F") %>% pull(BMI) %>% sd %>% {ExtractDecimalPlace(., 1)} -> Code_vec[2]
+
+```
+
+We can select several columns with `select` and the extract remains a data frame
+
+```{r}
+"./data/Zurich_data.csv" %>% read.csv %>% mutate(BMI = Weight/(Height/100)^2) %>%
+  filter(Sex == "M") %>% select(Sex, BMI) %>% head 
+```
+
+## Grouping and summarising
+
+A useful pair of functions from the `tidyverse` are `group_by` and `summarise`.  The grouping isn't visible in the data, but when piped into the `summarise` function, evaluations are performed on each group separately
+
+```{r}
+"./data/Zurich_data.csv" %>% read.csv %>% group_by(Sex) %>% # group each Sex separately
+  summarise(meanH = mean(Height), sdH = sd(Height)) # compute mean and sd of Height
+```
+
+The output is a data frame called a **tibble**. The `summarise` function currently gives an annoying warning by default, so to suppress we set a global option
+
+```{r}
+options(dplyr.summarise.inform = FALSE)
+```
+
+
+*CODE Exercise 3: Create the IQR of the Height for each Sex of the `swiss_army` data, extract the IQR of the women.*
+
+```{r}
+"./data/Zurich_data.csv" %>% read.csv %>% group_by(Sex) %>% 
+  summarise(IQRH = IQR(Height)) %>%  filter(Sex == "F") %>% pull(IQRH) -> Code_vec[3]
+```
+
+Last week we created `loop_df`, a data frame of sample means and variances for different distributions and different sample sizes.
+
+```{r, echo=FALSE}
+set.seed(seed_number) # and to set before we sample
+n_reps <- 400 # the number of repetitions
+sample_sizes <- c(10, 20, 40) # the possible sample sizes
+distribs <- c("Uniform", "Binomial") # the range of distributions
+loop_df <- data.frame() # start with an empty dataframe
+
+for (s_size in sample_sizes) { # loop over possible sample sizes
+  for (distrib in distribs) { # loop over the different distributions
+    sample_means <- rep(NA, n_reps) # create a vector of sample means
+    sample_variances <- rep(NA, n_reps) # create a vector of sample variances
+    
+    for (ii in 1:n_reps) { # loop over the repetitions
+      # obtain a random sample
+      if(distrib == "Uniform"){ 
+        local_sample <- 4*runif(s_size)
+      }
+      if(distrib == "Binomial"){ 
+        local_sample <- rbinom(s_size, 4, 0.5)
+      }
+      sample_means[ii] <- mean(local_sample) # compute and store the mean
+      sample_variances[ii] <- var(local_sample) # compute and store the variance
+    } # end repetition loop
+    # build a local data frame for the repetitions with a given sample size and distribution
+    local_df <- data.frame(distribution = distrib, sample_size = s_size,
+                  sample_means = sample_means, sample_variances = sample_variances)
+    loop_df <- rbind(loop_df, local_df) # append to the full data frame
+  } # end distribution loop
+} # end sample size loop
+```
+
+One exercise was to extract the IQRs of the sample variances, which we can now achieve with much simpler code
+
+```{r}
+loop_df %>% group_by(distribution, sample_size) %>% summarise(IQR = IQR(sample_variances))
+```
+
+The `kable` function (as part of the `knitr` package, see `?kable`) can make such tables more presentable
+
+```{r}
+loop_df %>% group_by(distribution, sample_size) %>% 
+  summarise(IQR = IQR(sample_variances)) %>% kable
+```
+
+*Exercise 3: Swap the order of the two grouping variables, what happens?*
+
+```{r}
+loop_df %>% group_by(sample_size, distribution) %>% 
+  summarise(IQR = IQR(sample_variances)) %>% kable
+```
+
+*Exercise 4: In Statistics Exercises 2.2 and 2.3, we used the average height per canton from the data in `Height_1884_91.csv`.  Recompute this using pipes, grouping and summarising.*
+
+```{r}
+"./data/Height_1884_91.csv" %>% {read.csv(.)} %>% group_by(canton) %>% 
+  summarise(avgHeight = mean(height))
+
+
+```
+
+
+*CODE Exercise 4: Also compute the median height per canton and include it in the data frame.  What is the largest median?*
+
+```{r}
+
+"./data/Height_1884_91.csv" %>% {read.csv(.)} %>% group_by(canton) %>% 
+  summarise(avgHeight = mean(height), medHeight = median(height)) %>% 
+  pull(medHeight) %>% {max(.)} -> Code_vec[4]
+
+```
+
+## Joining data frames
+
+Let's make two simple data frames
+
+```{r}
+x <- c(1:10)[-c(4:6)]
+log_df <- data.frame(x = x, log = log(x), log10 = log10(x))
+x <- c(1:10)[-c(7:8)]
+sqrt_df <- data.frame(x = x, sqrt = sqrt(x))
+```
+
+We can combine these into a single data frame with `merge` from base `R`
+
+```{r}
+merge(log_df, sqrt_df)
+```
+
+Here by default, the rows which are identical across common column names in both data sets are kept while the different columns are appended and kept.
+
+*Exercise 5: Look at the `all`, `all.x` and `all.y` options in the arguments of `merge`, and try merging with all four options.*
+
+```{r}
+merge(log_df, sqrt_df, all = TRUE)
+merge(log_df, sqrt_df, all.x = TRUE)
+merge(log_df, sqrt_df, all.y = TRUE)
+```
+Indicates which values to keep if they are missing in other data frame
+-> missing values are filled in with NAs
+
+*CODE Exercise 5: What is the total sum of the number of rows in the four datasets generated by the different `all` options?*
+
+```{r}
+Code_vec[5] <- nrow(merge(log_df, sqrt_df, all = FALSE)) +
+nrow(merge(log_df, sqrt_df, all = TRUE)) +
+nrow(merge(log_df, sqrt_df, all.x = TRUE)) +
+nrow(merge(log_df, sqrt_df, all.y = TRUE))
+```
+
+The `tidyverse` version is called `join` with four different versions.  The default above is `inner_join`
+
+```{r, warning=FALSE}
+inner_join(log_df, sqrt_df)
+```
+
+*Exercise 6: Also try `left_join`, `right_join` and `full_join` and compare to the different `all` options of `merge`.*
+
+```{r}
+left_join(log_df, sqrt_df) # -> "all.x = TRUE"
+right_join(log_df, sqrt_df) # -> "all.y = TRUE"
+full_join(log_df, sqrt_df) # -> "all = TRUE"
+inner_join(log_df, sqrt_df) # -> "all = FALSE"
+
+```
+
+*Exercise 7: Join the average and median heights of cantons from CODE Exercise 4 with the data from `switzerland.csv` of Statistics Exercises 2.3.*
+
+```{r}
+
+"./data/switzerland.csv" %>%  {read.csv(.)} -> dat_2
+
+
+"./data/Height_1884_91.csv" %>% {read.csv(.)} %>% group_by(canton) %>% 
+  summarise(avgHeight = mean(height), medHeight = median(height)) -> dat_3
+
+result_7 <- full_join(dat_2, dat_3, copy = TRUE)
+
+```
+
+
+*CODE Exercise 6: What is the digit in the first decimal place of the sum of the median heights in metres in the joined dataset?*
+
+```{r}
+
+result_7 %>% pull(medHeight) %>% {./100} %>% na.exclude() %>% 
+  sum %>% {ExtractDecimalPlace(.,1)} -> Code_vec[6]
+
+```
+
+*Exercise 8: Plot the map of Switzerland with cantons coloured by their mean height. What happens if you use `merge`, and what happens if you use `join`?*
+
+
+## Storing and joining plots
+
+Plots can also be stored as variables
+
+```{r}
+p1 <- ggplot(log_df) + geom_line(aes(x = x, y = log), col="dodgerblue") +
+  geom_point(aes(x = x, y = log), col = "dodgerblue") +
+  theme_bw() + theme(text = element_text(size=14))
+p2 <- ggplot(sqrt_df) + geom_line(aes(x = x, y = sqrt), col = "darkorange", 
+                                      linetype = "dashed") +
+  theme_bw() + theme(text = element_text(size = 14)) 
+```
+
+As you might have noticed, nothing has been displayed.  To display the plots, we can just type their name, or `print` them
+
+```{r}
+p1
+print(p2)
+```
+
+Often in papers, we may combine several figures as panels of a larger figure.  One nice package to create a figure with panels is `cowplot` and the `plot_grid` function
+
+```{r, warning=FALSE, message=FALSE}
+library(cowplot)
+plot_grid(p1, p2, labels = c('A', 'B'), label_size = 12)
+```
+
+This example was to highlight the syntax, but these two lines would fit better in a single plot, as in Programming 2.  In general, we should visualise similar data in the same plot, or as **facets**, whereas panels should be used for different data or for contrast.
+
+*Exercise 9: Create a figure with two panels of the map of Switzerland coloured by mean height, one using `merge` and the other using `join`.*  
+
+
+## CODE concatenation
+
+*FINAL CODEWORD: Combine your answers to CODE Exercises `c(1:6)` into a single string with underscores separating the individual answers. Upload this codeword, without speech marks.*
+
+
+```{r}
+paste(as.character(Code_vec), collapse="_") # Code copied from exercise 1
+```
