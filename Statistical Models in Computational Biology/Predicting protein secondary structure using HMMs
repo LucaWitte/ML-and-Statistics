@@ -1,0 +1,251 @@
+---
+title: "Predicting protein secondary structure using HMMs"
+output: pdf_document
+---
+
+```{r}
+set.seed(2023)
+
+library(matlib)
+library(expm)
+library(magrittr)
+library(gmodels)
+library(ggplot2)
+library(plyr)
+```
+
+## (a) Load data
+
+Read the data
+
+```{r}
+train <- read.table(file = 'data/proteins_train.tsv', sep = '\t', header = FALSE)
+test <- read.table(file = 'data/proteins_test.tsv', sep = '\t', header = FALSE)
+new <- read.table(file = 'data/proteins_new.tsv', sep = '\t', header = FALSE)
+
+train <- data.frame(train)
+test <- data.frame(test)
+new <- data.frame(new)
+```
+
+## (b) Estimate initial I, matrix transition probabilities T, matrix for emissions E by MLE
+
+
+```{r}
+secondary <- c("B", "C", "E", "G", "H", "I", "S", "T")
+```
+
+
+Initial vector state probabilities I
+
+```{r}
+initiate <- function(data){
+  initial <- rep(0,8)
+  for(i in 1:nrow(data)){
+    s <- strsplit(train[i,3],"")[[1]]
+    initial[which(secondary==s[1])] <- initial[which(secondary==s[1])] + 1
+  }
+  initial <- initial/sum(initial)
+  return(initial)
+}
+
+initial <- initiate(train)
+
+print(initial)
+```
+
+
+Transition probabilities T
+
+```{r}
+#Transition probabilities
+trans <- function(data,sequence,column){
+  transition <- matrix(0,length(sequence),length(sequence))
+  for(i in 1:nrow(data)){
+    s <- strsplit(data[i,column],"")[[1]]
+    prev <- which(sequence==s[1])
+    for(j in 2:length(s)){
+      k <- which(sequence==s[j])
+      transition[prev,k] <- transition[prev,k] + 1
+      prev <- k
+    }
+  }
+  for(i in 1:length(sequence)){
+    transition[i,] <- transition[i,]/sum(transition[i,])
+  }
+  return(transition)
+}
+
+transition <- trans(train,secondary,3)
+
+print(transition)
+```
+
+
+Emission probabilities E
+
+```{r}
+aminoacids <- c("A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", 
+                "S", "T", "U", "V", "W", "X","Y")
+emit <- function(data,sequence_z,sequence_x,column_z,column_x){
+  emission <- matrix(0,length(sequence_z),length(sequence_x))
+  for(i in 1:nrow(data)){
+    aa <- strsplit(data[i,column_x],"")[[1]]
+    sec <- strsplit(data[i,column_z],"")[[1]]
+    for(k in 1:length(aa)){
+      emission[which(sequence_z==sec[k]),which(sequence_x==aa[k])] <- 
+        emission[which(sequence_z==sec[k]),which(sequence_x==aa[k])] + 1
+    }
+  }
+  
+  for(i in 1:length(sequence_z)){
+    emission[i,] <- emission[i,]/sum(emission[i,])
+  }
+  return(emission)
+}
+
+emission <- emit(train,secondary,aminoacids,3,2)
+
+print(emission)
+
+```
+## (c) Estimate stationary distribution
+
+Solving eigenvalue
+
+```{r}
+#Eigenvalue problem
+e <- eigen(transition)
+pi_eigen_possible <- inv(e$vectors)
+one <- which(e$values==1)
+pi_eigen <- pi_eigen_possible[one,]/sum(pi_eigen_possible[1,])
+print(pi_eigen)
+```
+
+Solving by bruteforce
+
+```{r}
+#Eigenvalue problem
+pi_bru <- (transition %^% 100)[1,]
+print(pi_bru)
+```
+
+
+## (d) Viterbi algorithm
+
+
+```{r}
+viterbi <- source("code/viterbi.r")
+colnames(test) <- c('Name','AminoAcids','SecondaryStructure')
+colnames(new) <- c('Name','AminoAcids')
+test_pred <- viterbi$value(log(emission),log(transition),log(initial),test)
+new_pred <- viterbi$value(log(emission),log(transition),log(initial),new)
+#Writing data as tsv file
+write.table(new_pred,"extended_proteins new.tsv")
+```
+
+
+## (e) Estimating confidence intervals
+
+```{r}
+# n = 1000
+# initial.boot <- matrix(0,n,8)
+# transition.boot <- array(0, c(8, 8, n))
+# emission.boot <- array(0, c(8, 22, n))
+# for(i in 1:n){
+#   #Data sampled with replacement
+#   sample_data <- train[sample(1:nrow(train), nrow(train),replace = TRUE), ]
+#   initial.boot[i,] <- initiate(sample_data) # works
+#   transition.boot[, ,i] <- trans(sample_data,secondary,3)
+#   emission.boot[, ,i] <- emit(sample_data,secondary,aminoacids,3,2)
+# }
+# 
+# #Writing bootstrapped data into separate documents, so that this doesn't have to be recalculated
+# saveRDS(initial.boot, "initial.rds")
+# saveRDS(transition.boot, "transition.rds")
+# saveRDS(emission.boot, "emission.rds")
+
+#Opening the bootstrapped data
+initial_bootstrapped <- readRDS("initial.rds")
+transition_bootstrapped <- readRDS("transition.rds")
+emission_bootstrapped <- readRDS("emission.rds")
+
+initial_bootstrapped[is.na(initial_bootstrapped)] <- 0
+transition_bootstrapped[is.na(transition_bootstrapped)] <- 0
+emission_bootstrapped[is.na(emission_bootstrapped)] <- 0
+
+```
+
+
+
+```{r, warning=FALSE}
+
+# Confidence intervals
+## We use the "ci" function of the gmodels package
+## The function returns the mean, confidence intervall bounds and sd in matrix-form
+
+CI_init <- apply(initial_bootstrapped, 2, ci)
+CI_trans <- aaply(transition_bootstrapped, c(1,2), ci)
+CI_emm <- aaply(emission_bootstrapped, c(1,2), ci)
+
+print(CI_init)
+print(CI_trans)
+print(CI_emm)
+```
+
+
+## (f) Accuracy of the predicted secondary structure
+
+
+```{r}
+
+test_pred$score <- rep(0, length(test_pred$SecondaryStructure))
+for (i in c(1:length(test_pred$SecondaryStructure))){
+  test_pred$score[i] <- sum(strsplit(test_pred$SecondaryStructure[i],"")[[1]] ==
+                            strsplit(test_pred$PredictedStructure[i],"")[[1]])/
+                            nchar(test_pred$SecondaryStructure[i])
+}
+
+summary(test_pred$score)
+```
+
+
+
+## (f) Random prediction
+
+
+```{r}
+test_pred$random <- rep(0, length(test_pred$SecondaryStructure))
+test_pred$random_score <- rep(0, length(test_pred$SecondaryStructure))
+
+for (i in c(1:length(test_pred$SecondaryStructure))){
+  test_pred$random[i] <- paste0(sample(secondary, 
+                                       nchar(test_pred$SecondaryStructure[i]), 
+                                       replace = TRUE), collapse = '')
+  test_pred$random_score[i] <- sum(strsplit(test_pred$SecondaryStructure[i],"")[[1]] ==
+                                     strsplit(test_pred$random[i],"")[[1]])/
+                                    nchar(test_pred$SecondaryStructure[i])
+}
+```
+
+
+Plotting the results
+
+
+```{r}
+plot_df <- data.frame(matrix(nrow = 2 * length(test_pred$score),
+                             ncol = 3))
+colnames(plot_df) <- c("Sequence", "Score", "Method")
+plot_df[,"Sequence"] <- rep(c(1:length(test_pred$score)),2)
+plot_df[,"Score"] <- c(test_pred$score, test_pred$random_score)
+plot_df[,"Method"] <- c(rep("Viterbi", 100), rep("Random", 100))
+
+ggplot(plot_df, aes(x=Method, y=Score, fill=Method)) + 
+geom_boxplot(outlier.shape = NA) +
+geom_jitter(position=position_jitter(0.15), alpha = 0.5)
+```
+
+
+    
+    
+
