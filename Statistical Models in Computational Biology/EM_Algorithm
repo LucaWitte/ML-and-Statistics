@@ -1,0 +1,172 @@
+
+## Exercise 1:
+Tow warm up: Implement your own naive matrix multiplication. What do we need?
+
+```{r}
+## What do we need? function, matrix object, for loops, addition mutliplication
+mm <- function(x, y) {
+  z <- matrix(0, nrow(x), ncol(y))
+  for (i in 1:nrow(x)) {
+    for (j in 1:ncol(y)) {
+      for (k in 1:ncol(x)) {
+        z[i, j] <- z[i, j] + x[i, k]*y[k, j]
+      }
+    }
+  }
+  return(z)
+}
+```
+
+Sanity check:
+
+```{r}
+set.seed(666)
+x <- matrix(rnorm(100*10), 100)
+y <- matrix(rnorm(10*1000), 10)
+print(all(mm(x,y) == x%*%y)) # oops?
+print(all(round(mm(x,y),11) == round(x%*%y,11)))
+```
+
+## Motif finding
+
+We assume that reads consisting of several of the bases A,C,G,T (1,2,3,4) come from either a background distribution (independent of position) or an alternative.
+
+First, we have to define the ground truth parameters. They contain the probabilities of the alternative and the mixture weight.
+
+```{r}
+## random parameters
+phi1 <- matrix(runif(10*4, 0, 1), 4) # parameters motif model
+phi1 <- apply(phi1, 2, function(x) x/sum(x)) # background model parameters
+phi2 <- runif(4, 0, 1)
+phi2 <- phi2/sum(phi2)
+mw <- runif(1, 0.1, 0.9)
+
+## ## example
+## phi1 <- matrix(c(0.1,0.2,0.3,0.7), 4, 10)
+## phi2 <- rep(0.25, 4)
+## mw <- 0.4
+```
+
+In the next part, we generate data (reads of length n=10) based on our ground truth parameters. 
+
+```{r}
+## generate data
+nreads <- 100
+data1 <- numeric()
+for (i in 1:10) {
+    tmp <- numeric()
+    for (j in 1:round(nreads*mw)) {
+        tmp <- c(tmp, sample(1:4, 1, prob = phi1[, i]))
+    }
+    data1 <- cbind(data1, tmp)
+}
+data0 <- numeric()
+for (i in 1:10) {
+    tmp <- numeric()
+    for (j in 1:round(nreads*(1-mw))) {
+        tmp <- c(tmp, sample(1:4, 1, prob = phi2))
+    }
+    data0 <- cbind(data0, tmp)
+}
+data <- rbind(data1, data0)
+
+## save(phi2, phi1, data, file = "motif.rda")
+## load("motif.rda")
+```
+
+We pretend to neither know the model parameters nor which component generated which read. We use an expectation maximization algorithm to iteratively compute the expectation of the reads and the model parameters until convergence.
+
+```{r}
+## implementation of the EM
+em <- function(data) {
+    ## random inits -> better initial guess = faster, less likely to hit unexpected local maximum
+    m1 <- matrix(runif(4*ncol(data), 0, 1), 4) # Parameters to be estimated (slide 20: theta1 & theta2)
+    m1 <- apply(m1, 2, function(x) x/sum(x))
+    m0 <- runif(4, 0, 1) # Parameters to be estimated (slide 20: theta1 & theta2)
+    m0 <- m0/sum(m0)
+    lambda <- 0.5
+    # initial E-step -> expected hidden LH
+    # Initial E-step required for while-loop -> alternative = repeat{ E-step ... M-step ... if(count > Threshhold | ll - lold < threshold){break}} -> break when log-LH does not increase much
+    probs <- matrix(0, nrow(data), 2) # = *Responsibility* (formula = slide 17) = gamma_ik
+    for (i in 1:nrow(data)) {
+        tmp <- tmp0 <- 1
+        for (j in 1:ncol(data)) { # Loop: every observation in vector (= 100 flips) -> better would be counting instances and raising to power of counts each probability
+            ## product over the probabilities of each data point of a sample given each component
+            tmp <- m1[data[i, j], j]*tmp # Observation given the motif model
+            tmp0 <- m0[data[i, j]]*tmp0 # Observation given the background model
+        }
+        probs[i, 1] <- tmp*lambda # added up -> divide by sum to get gamma_ik
+        probs[i, 2] <- tmp0*(1-lambda) # added up -> divide by sum to get gamma_ik
+    }
+    ## calculate the observed data log likelihood of the model
+    lls <- ll <- sum(log(apply(probs, 1, sum)))
+    probs <- t(apply(probs, 1, function(x) x/sum(x)))
+    lambda <- apply(probs, 2, sum) # Lambda maximization with lagrange multiplier
+    lambda <- lambda[1]/sum(lambda) # Lambda maximization with lagrange multiplier
+    llold <- log(0)
+    count <- 0
+    while(count < 100) {
+        count <- count + 1
+        llold <- ll
+        ## M-step -> Update parameters
+        m0 <- 0
+        for (i in 1:ncol(data)) {
+            ## calculate new parameters with weighted probabilities
+            m1[, i] <- c(sum(probs[which(data[, i] == 1), 1]),
+                         sum(probs[which(data[, i] == 2), 1]),
+                         sum(probs[which(data[, i] == 3), 1]),
+                         sum(probs[which(data[, i] == 4), 1]))
+            m0 <- m0 + c(sum(probs[which(data[, i] == 1), 2]),
+                          sum(probs[which(data[, i] == 2), 2]),
+                          sum(probs[which(data[, i] == 3), 2]),
+                          sum(probs[which(data[, i] == 4), 2]))
+        }
+        m1 <- apply(m1, 2, function(x) x/sum(x))
+        m0 <- m0/sum(m0)
+        ## E-step
+        probs <- matrix(0, nrow(data), 2)
+        for (i in 1:nrow(data)) {
+            tmp <- tmp0 <- 1
+            for (j in 1:ncol(data)) {
+                tmp <- m1[data[i, j], j]*tmp
+                tmp0 <- m0[data[i, j]]*tmp0
+            }
+            probs[i, 1] <- tmp*lambda
+            probs[i, 2] <- tmp0*(1-lambda)
+        }
+        ll <- sum(log(apply(probs, 1, sum)))
+        lls <- c(lls, ll)
+        probs <- t(apply(probs, 1, function(x) x/sum(x)))
+        lambda <- apply(probs, 2, sum)
+        lambda <- lambda[1]/sum(lambda)
+    }
+    # Output = result
+    return(list(phi1 = m1, phi2 = m0, lambda = lambda, ll = ll, lls = lls))
+}
+```
+
+We put the data into our our function and let it run. To assess the result, we plot the ground truth against our inferred values.
+
+```{r}
+res <- em(data) # Runs defined function
+## plot correlation between parameters
+par(mfrow=c(2,2))
+plot(c(as.vector(phi1), phi2), c(as.vector(res$phi1), res$phi2), main = cor(c(as.vector(phi1), phi2), c(as.vector(res$phi1), res$phi2)))
+abline(0,1, col = "red")
+
+## compare to random parameters
+r1 <- matrix(runif(4*ncol(data), 0, 1), 4)
+r1 <- apply(r1, 2, function(x) x/sum(x))
+r0 <- runif(4, 0, 1)
+r0 <- r0/sum(r0)
+plot(c(as.vector(phi1), phi2), c(as.vector(r1), r0), main = cor(c(as.vector(phi1), phi2), c(as.vector(r1), r0)))
+abline(0,1, col = "red")
+
+## convergence rate and lambda
+plot(res$lls, main = paste0("True lambda ", round(mw, 2), " vs inferred ", round(res$lambda, 2)))
+# First plot: correlation between estimated & true parameters
+# Second plot: Comparing random parameters to ground truth
+# Third plot: log-likelihood converging to true lambda
+# -> Changing numbers nreads and threshold and initial guesses will improve
+# -> bad results mean we might have converged to local optimum that is not global maximum
+```
