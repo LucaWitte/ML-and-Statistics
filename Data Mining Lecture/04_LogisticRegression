@@ -1,0 +1,57 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Nov 18 07:00:15 2022
+
+@author: Luca Witte
+"""
+
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.preprocessing import StandardScaler
+
+input_train = pd.read_csv("D:/MasterSem_3/Data Mining/E4/HW4/data/diabetes_train.csv")
+input_test = pd.read_csv("D:/MasterSem_3/Data Mining/E4/HW4/data/diabetes_test.csv")
+
+x_train = input_train.iloc[:, 0:7].values
+y_train = input_train.iloc[:, 7].values
+
+x_test = input_test.iloc[:, 0:7].values
+y_test = input_test.iloc[:, 7].values
+
+# Prepocessing data: (x - mean)/sd
+scaler_train = StandardScaler().fit(x_train)
+x_train_scaled = scaler_train.transform(x_train)
+
+scaler_test = StandardScaler().fit(x_test)
+x_test_scaled = scaler_test.transform(x_test)
+
+# Fit logistic regression and predict classification
+logReg = LogisticRegression().fit(x_train_scaled,y_train)
+y_test_prediction = logReg.predict(x_test_scaled)
+
+# Evaluate prediction
+Accuracy = logReg.score(x_test_scaled, y_test)
+# Alternative: accuracy_score(y_test, y_test_prediction)
+
+TN, FP, FN, TP = confusion_matrix(y_test, y_test_prediction).ravel()
+
+print("TN = ", TN)
+print("FP = ", FP)
+print("FN = ", FN)
+print("TP = ", TP)
+print("Accuracy = ", Accuracy)
+
+weights = pd.DataFrame(logReg.coef_, columns = input_train.iloc[:,0:7].columns.values).sort_values(by=0, ascending=False, axis=1)
+print(weights)
+
+weights_exp = pd.DataFrame(np.exp(logReg.coef_).round(decimals = 2), 
+        columns = input_train.iloc[:,0:7].columns.values
+        ).sort_values(by=0, ascending=False, axis=1)
+
+# For every one-unit increase in [X variable], 
+# the odds that the observation is in (y class) are 
+# [coefficient] times as large as the odds that the observation 
+# is not in (y class) when all other variables are held constant.
