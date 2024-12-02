@@ -1,0 +1,130 @@
+#Gibbs Sampler
+
+n <- 100
+retMat <- matrix(ncol = 2, nrow = n)
+
+#We define a matrix, where sampling a 0 or 1 corresponds to C or R respectively.
+#The matrix contains the needed conditional probabilities to perform Gibbs sampling
+
+probs <- matrix(data = c((.5*.1*.2/(.5*.1*.2 + .5*.5*.8)),
+                        (.2*.99)/(.2*.99+.8*.9),
+                        (.5*.1*.8)/(.5*.1*.8 + .5*.5*.2),
+                        (.8*.99)/(.8*.99+.2*.9)), nrow = 2, ncol = 2)
+
+#Define x_0 as the initial state of the Markov chain
+x_0 <- c(1,1)
+x <- x_0
+
+#Uniformly sample whether to update C or R
+
+#Get initial index
+choice <- rbinom(1, 1, .5)
+idx <- choice + 1
+
+for (i in 1:n) {
+  
+  sampling_prob <- probs[idx, (!choice) + 1]
+  sample <- rbinom(1, 1, sampling_prob)
+  
+  
+  retMat[i, ] <- x
+  x[idx] <- sample
+  
+  idx <- ifelse(idx == 2, yes = 1, no = 2)
+  
+}
+
+retMat
+
+
+counts <- matrix(data = c(0, 0, 0, 0),
+                 nrow = 2, ncol = 2)
+
+
+
+for (i in 1:n) {
+  temp <- retMat[i, ]
+  temp <- temp + 1
+  counts[temp[1], temp[2]] <- counts[temp[1], temp[2]] + 1
+}
+
+counts
+
+acf1 <- acf(retMat[, 1])
+n/(1 + 2 *sum(acf1$acf))
+
+acf2 <- acf(retMat[, 2])
+n/(1 + 2 * sum(acf2$acf))
+
+
+## 50k samples
+
+sim_1 <- matrix(ncol = 2, nrow = 50000)
+sim_2 <- matrix(ncol = 2, nrow = 50000)
+
+#We define a matrix, where sampling a 0 or 1 corresponds to C or R respectively.
+#The matrix contains the needed conditional probabilities to perform Gibbs sampling
+
+probs <- matrix(data = c((.5*.1*.2/(.5*.1*.2 + .5*.5*.8)),
+                         (.2*.99)/(.2*.99+.8*.9),
+                         (.5*.1*.8)/(.5*.1*.8 + .5*.5*.2),
+                         (.8*.99)/(.8*.99+.2*.9)), nrow = 2, ncol = 2)
+
+#Define x_0 as the initial state of the Markov chain
+x_0 <- c(1,1)
+x <- x_0
+
+#Uniformly sample whether to update C or R
+n = 50000
+
+choice <- rbinom(1, 1, .5)
+idx <- choice + 1
+
+for (i in 1:n) {
+  
+  sampling_prob <- probs[idx, (!choice) + 1]
+  sample <- rbinom(1, 1, sampling_prob)
+  
+  
+  sim_1[i, ] <- x
+  x[idx] <- sample
+  
+  idx <- ifelse(idx == 2, yes = 1, no = 2)
+  
+}
+
+
+x_0 <- c(1,1)
+x <- x_0
+
+#Uniformly sample whether to update C or R
+choice <- rbinom(1, 1, .5)
+idx <- choice + 1
+
+for (i in 1:n) {
+  
+  sampling_prob <- probs[idx, (!choice) + 1]
+  sample <- rbinom(1, 1, sampling_prob)
+  
+  sim_2[i, ] <- x
+  x[idx] <- sample
+
+  idx <- ifelse(idx == 2, yes = 1, no = 2)
+  
+}
+
+
+par(mfrow=c(2,1), mar = c(5,5,1,1))
+
+plot(cumsum(sim_1[, 1])/c(1:50000), type = 'l', ylim = c(0, 1), ylab = "Frequency", xlab = "Iterations")
+lines(cumsum(sim_2[, 1])/c(1:50000), col = "red")
+
+plot(cumsum(sim_1[, 2])/c(1:50000), type = 'l', ylim = c(0, 1), ylab = "Frequency", xlab = "Iterations")
+lines(cumsum(sim_2[, 2])/c(1:50000), col = "red")
+
+#Set 20k
+
+# install.packages("coda")
+library("coda")
+
+gelman.plot(mcmc.list(mcmc(sim_1[, 1]), mcmc(sim_2[, 1])))
